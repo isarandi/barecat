@@ -1472,50 +1472,53 @@ class Index(AbstractContextManager):
             sqlite3.DatabaseError: If an error occurs during the operation.
 
         """
-        self.cursor.execute(f"ATTACH DATABASE 'file:{source_index_path}?mode=ro' AS sourcedb")
 
-        # Duplicate dirs are allowed, they will be merged and updated
-        self.cursor.execute(
-            """
-            INSERT INTO dirs (
-                path, num_subdirs, num_files, size_tree, num_files_tree,
-                mode, uid, gid, mtime_ns)
-            SELECT path, num_subdirs, num_files, size_tree, num_files_tree,
-                mode, uid, gid, mtime_ns
-            FROM sourcedb.dirs WHERE true
-            ON CONFLICT (dirs.path) DO UPDATE SET
-                num_subdirs = num_subdirs + excluded.num_subdirs,
-                num_files = num_files + excluded.num_files,
-                size_tree = size_tree + excluded.size_tree,
-                num_files_tree = num_files_tree + excluded.num_files_tree,
-                mode = coalesce(
-                    dirs.mode | excluded.mode,
-                    coalesce(dirs.mode, 0) | excluded.mode,
-                    dirs.mode | coalesce(excluded.mode, 0)),
-                uid = coalesce(excluded.uid, dirs.uid),
-                gid = coalesce(excluded.gid, dirs.gid),
-                mtime_ns = coalesce(
-                    max(dirs.mtime_ns, excluded.mtime_ns),
-                    max(coalesce(dirs.mtime_ns, 0), excluded.mtime_ns),
-                    max(dirs.mtime_ns, coalesce(excluded.mtime_ns, 0)))
-            """
-        )
-        new_shard_number = self.num_used_shards
-        maybe_ignore = 'OR IGNORE' if ignore_duplicates else ''
-        self.cursor.execute(
-            f"""
-            INSERT {maybe_ignore} INTO files (
-                path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
-            SELECT path, shard + ?, offset, size, crc32c, mode, uid, gid, mtime_ns
-            FROM sourcedb.files
-            """,
-            (new_shard_number,),
-        )
-        self.cursor.execute("DETACH DATABASE sourcedb")
+        with self.no_triggers():
+            self.cursor.execute(f"ATTACH DATABASE 'file:{source_index_path}?mode=ro' AS sourcedb")
 
-        if ignore_duplicates:
-            self.update_treestats()
-        self.conn.commit()
+            # Duplicate dirs are allowed, they will be merged and updated
+            self.cursor.execute(
+                """
+                INSERT INTO dirs (
+                    path, num_subdirs, num_files, size_tree, num_files_tree,
+                    mode, uid, gid, mtime_ns)
+                SELECT path, num_subdirs, num_files, size_tree, num_files_tree,
+                    mode, uid, gid, mtime_ns
+                FROM sourcedb.dirs WHERE true
+                ON CONFLICT (dirs.path) DO UPDATE SET
+                    num_subdirs = num_subdirs + excluded.num_subdirs,
+                    num_files = num_files + excluded.num_files,
+                    size_tree = size_tree + excluded.size_tree,
+                    num_files_tree = num_files_tree + excluded.num_files_tree,
+                    mode = coalesce(
+                        dirs.mode | excluded.mode,
+                        coalesce(dirs.mode, 0) | excluded.mode,
+                        dirs.mode | coalesce(excluded.mode, 0)),
+                    uid = coalesce(excluded.uid, dirs.uid),
+                    gid = coalesce(excluded.gid, dirs.gid),
+                    mtime_ns = coalesce(
+                        max(dirs.mtime_ns, excluded.mtime_ns),
+                        max(coalesce(dirs.mtime_ns, 0), excluded.mtime_ns),
+                        max(dirs.mtime_ns, coalesce(excluded.mtime_ns, 0)))
+                """
+            )
+            new_shard_number = self.num_used_shards
+            maybe_ignore = 'OR IGNORE' if ignore_duplicates else ''
+            self.cursor.execute(
+                f"""
+                INSERT {maybe_ignore} INTO files (
+                    path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
+                SELECT path, shard + ?, offset, size, crc32c, mode, uid, gid, mtime_ns
+                FROM sourcedb.files
+                """,
+                (new_shard_number,),
+            )
+            self.conn.commit()
+            self.cursor.execute("DETACH DATABASE sourcedb")
+
+            if ignore_duplicates:
+                self.update_treestats()
+                self.conn.commit()
 
     def update_treestats(self):
         print('Creating temporary tables for treestats')

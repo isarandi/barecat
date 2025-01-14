@@ -36,6 +36,7 @@ barecat2archive = "barecat.cli:barecat2archive"
 barecat-defrag = "barecat.cli:defrag"
 barecat-create-recursive = "barecat.cli:create_recursive"
 barecat-viewer = "barecat.viewerqt6:main"
+barecat-upgrade-database = "barecat.upgrade_database:main"
 
 [tool.setuptools]
 packages = ["barecat"]

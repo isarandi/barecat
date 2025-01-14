@@ -158,6 +158,11 @@ def merge_symlink(source_paths, target_path, overwrite=False, ignore_duplicates=
         os.remove(index_path)
 
     with barecat_.Index(index_path, readonly=False) as index_writer:
+        c = index_writer.cursor
+        c.execute("COMMIT")
+        c.execute('PRAGMA synchronous=OFF')
+        c.execute('PRAGMA journal_mode=OFF')
+
         i_out_shard = 0
         for source_path in source_paths:
             index_writer.merge_from_other_barecat(
