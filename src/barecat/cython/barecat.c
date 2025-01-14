@@ -110,51 +110,6 @@ int barecat_init(struct BarecatContext *ctx, const char *db_path, const char **s
     return 0;
 }
 
-int barecat_crc32c_from_address(struct BarecatContext *ctx, int shard, size_t offset, size_t size, uint32_t *crc_out) {
-    if (shard < 0 || shard >= ctx->num_shards) {
-        return -EINVAL;
-    }
-
-    FILE *shard_file = ctx->shard_files[shard];
-    if (fseek(shard_file, offset, SEEK_SET) != 0) {
-        fprintf(stderr, "Error seeking in shard file: %s\n", strerror(errno));
-        return -1;
-    }
-
-    uint32_t crc = 0;
-    unsigned char buf[16384];
-    size_t remaining = size;
-    while (remaining > 0) {
-        size_t to_read = remaining > sizeof(buf) ? sizeof(buf) : remaining;
-        size_t num_read = fread(buf, 1, to_read, shard_file);
-        if (num_read != to_read) {
-            if (feof(shard_file)) {
-                fprintf(stderr, "Error reading from shard %d, offset %ld, wanted %ld, read %ld: EOF\n", shard, offset, to_read, num_read);
-            } else if (ferror(shard_file)) {
-                fprintf(stderr, "Error reading from shard %d, read %ld: %s\n", shard, num_read, strerror(errno));
-            }
-            return -1;
-        }
-        crc = crc32c(crc, buf, num_read);
-        remaining -= num_read;
-    }
-    *crc_out = crc;
-    return 0;
-}
-
-int barecat_read_from_address(struct BarecatContext *ctx, int shard, size_t offset, size_t size, void *buf) {
-    if (shard < 0 || shard >= ctx->num_shards) {
-        return -EINVAL;
-    }
-
-    FILE *shard_file = ctx->shard_files[shard];
-    if (fseek(shard_file, offset, SEEK_SET) != 0) {
-        fprintf(stderr, "Error seeking in shard file: %s\n", strerror(errno));
-        return -1;
-    }
-
-    return fread(buf, 1, size, shard_file);
-}
 
 int barecat_destroy(struct BarecatContext *ctx) {
     if (ctx->stmt_get_file) {

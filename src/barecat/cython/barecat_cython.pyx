@@ -25,8 +25,6 @@ cdef extern from "barecat.h" nogil:
     int barecat_init(BarecatContext *ctx, const char *db_path, const char ** shard_paths, size_t num_shards)
     int barecat_destroy(BarecatContext *ctx)
     int barecat_read(BarecatContext *ctx, const char *path, void ** buf, size_t *size)
-    int barecat_read_from_address(BarecatContext *ctx, int shard, size_t offset, size_t size, void *buf)
-    int barecat_crc32c_from_address(BarecatContext *ctx, int shard, size_t offset, size_t size, uint32_t *crc_out)
 
 cdef extern from "barecat_mmap.h" nogil:
     struct BarecatMmapContext:
@@ -97,20 +95,6 @@ cdef class BarecatCython:
         PyArray_ENABLEFLAGS(arr, np.NPY_OWNDATA)
         return memoryview(arr)
 
-    def crc32c_from_address(self, int shard, size_t offset, size_t size):
-        if not self.is_initialized:
-            raise RuntimeError(f"Called read on uninitialized Barecat")
-
-        cdef uint32_t crc
-        cdef int rc
-        with nogil:
-            rc = barecat_crc32c_from_address(&self.ctx, shard, offset, size, &crc)
-
-        if rc != 0:
-            raise RuntimeError(
-                f"Failed to calculate CRC32C from address {shard}:{offset} with size {size} from Barecat.")
-
-        return crc
 
     def close(self):
         if self.is_initialized:

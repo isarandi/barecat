@@ -13,13 +13,12 @@ def main():
     parser = argparse.ArgumentParser(description='Migrate index database to new version')
     parser.add_argument('path_in', type=str, help='Path to the old barecat')
     parser.add_argument('path_out', type=str, help='Path to the new barecat')
-    parser.add_argument('--mmap', action='store_true', help='Use memory mapping for calculating crc32c')
     parser.add_argument('--workers', type=int, default=8, help='Number of workers for calculating crc32c')
 
     args = parser.parse_args()
     symlink_shards(args.path_in, args.path_out)
     upgrade_schema(args.path_in, args.path_out)
-    update_crc32c(args.path_out, workers=args.workers, mmap=args.mmap)
+    update_crc32c(args.path_out, workers=args.workers)
 
 
 def upgrade_schema(path_in: str, path_out: str):
@@ -55,12 +54,9 @@ def upgrade_schema(path_in: str, path_out: str):
         c.execute("DETACH DATABASE source")
 
 
-def update_crc32c(path_out: str, workers=8, mmap=False):
-
-    barecat_class = barecat.cython.BarecatMmapCython if mmap else barecat.cython.BarecatCython
-
+def update_crc32c(path_out: str, workers=8):
     with (
-        barecat_class(path_out) as sh,
+        barecat.cython.BarecatMmapCython(path_out) as sh,
         barecat.Index(path_out + '-sqlite-index', readonly=False) as index,
     ):
         c = index.cursor
