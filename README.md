@@ -1,5 +1,7 @@
 # Barecat
 
+**[Full API Reference Docs](https://istvansarandi.com/docs/barecat/api/barecat/Barecat.html)**
+
 Barecat (**bare** con**cat**enation) is a highly scalable, simple aggregate storage format for
 storing many (tens of millions and more) small files, with focus on fast random access and 
 minimal overhead.
@@ -23,7 +25,6 @@ total number of files and total file size.
 
 As you can see, the Barecat format is very simple. Readers/writers are easy to write in any language, since
 SQLite is a widely-supported format.
-
 
 
 ## Background
