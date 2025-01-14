@@ -113,57 +113,6 @@ with barecat.Barecat('mydata.barecat') as bc:
     data = f.read(123)
 ```
 
-## Mounting via FUSE
-
-Barecat archives can be mounted via FUSE, allowing it to be used like a filesystem.
-It can handle at least tens of millions of files and terabytes of data, even over 100k files in
-single directories. Directory listing is written to produce the results in a streaming fashion,
-so entries will start appearing even in huge directories fairly quickly. 
-
-```bash
-
-# readonly:
-barecat-mount mydata.barecat mountpoint/
-
-# read-write:
-barecat-mount --writable mydata.barecat mountpoint/
-
-# unmount:
-fusermount -u mountpoint/
-# or
-umount mountpoint/
-```  
-
-Since Barecat always adds new files at the end of the archive, many deletions and insertions
-will lead to fragmentation. The general idea is to write once, read many times, and do
-deletions only when you need to fix a mistake. There is basic heuristic auto-defragmentation
-that can be enabled as follows:
-
-```bash
-barecat-mount --writable --enable-defrag mydata.barecat mountpoint/
-```
-
-This way, the filesystem will periodically defragment itself after significant amount of deletions.
-You can also perform a defrag with:
-
-```bash
-barecat-defrag mydata.barecat
-```
-
-This will go in sequence and move all the files towards the beginning of the archive, leaving
-no gaps. This may take very long, since even closing one byte gap requires moving all the
-following data. A quick option is available with:
-
-```bash
-barecat-defrag --quick mydata.barecat
-```
-
-This will proceed backwards, starting from the end of the archive, and will move each file
-into the first available gap, counted from the beginning of the archive (first-fit). The 
-algorithm stops after meeting the first file that has no gap that can fit it.
-
-...documentation to be continued...
-
 ## Image viewer
 
 Barecat comes with a simple image viewer that can be used to browse the contents of a Barecat
