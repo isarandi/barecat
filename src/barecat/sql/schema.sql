@@ -18,7 +18,7 @@ CREATE TABLE files
     uid      INTEGER DEFAULT NULL,
     gid      INTEGER DEFAULT NULL,
     mtime_ns INTEGER DEFAULT NULL
-) WITHOUT ROWID;
+);
 
 CREATE TABLE dirs
 (
@@ -39,7 +39,7 @@ CREATE TABLE dirs
     uid            INTEGER DEFAULT NULL,
     gid            INTEGER DEFAULT NULL,
     mtime_ns       INTEGER DEFAULT NULL
-) WITHOUT ROWID;
+);
 
 CREATE TABLE config -- For now, this table only holds the `shard_size_limit`
 (
