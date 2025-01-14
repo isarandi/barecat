@@ -5,7 +5,7 @@ storing many (tens of millions and more) small files, with focus on fast random 
 minimal overhead.
 
 Barecat can be thought of as a simple filesystem, or as something akin to an indexed tarball, or a
-key-value store. Indeed, it can be mounted via FUSE, converted to a tarball, or used like a dictionary
+key-value store. Indeed, it can be [mounted via FUSE](https://github.com/isarandi/barecat-mount), converted to a tarball, or used like a dictionary
 within Python.
 
 Barecat associates strings (file paths) with binary data (file contents). It's like a dictionary,
