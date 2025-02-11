@@ -170,14 +170,17 @@ class ZipWriter:
 
 
 class TarWriter:
-    def __init__(self, target_path):
-        self.tar = tarfile.open(target_path, mode='w')
+    def __init__(self, *args, **kwargs):
+        if 'mode' not in kwargs:
+            kwargs['mode'] = 'w'
+        self.tar = tarfile.open(*args, **kwargs)
 
     def add(self, info: BarecatEntryInfo, fileobj=None):
         tarinfo = tarfile.TarInfo(info.path)
         tarinfo.uid = info.uid or 0
         tarinfo.gid = info.gid or 0
-        tarinfo.mtime = info.mtime_ns // 1_000_000_000
+        if info.mtime_ns is not None:
+            tarinfo.mtime = info.mtime_ns // 1_000_000_000
         if isinstance(info, BarecatDirInfo):
             tarinfo.type = tarfile.DIRTYPE
             tarinfo.mode = 0o755 if info.mode is None else info.mode

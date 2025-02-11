@@ -9,7 +9,12 @@ import sys
 import time
 
 import barecat.util
-from barecat.archive_formats import get_archive_writer, iter_archive, iter_archive_nocontent
+from barecat.archive_formats import (
+    get_archive_writer,
+    iter_archive,
+    iter_archive_nocontent,
+    TarWriter,
+)
 from barecat.consumed_threadpool import ConsumedThreadPool
 from barecat.core import barecat as barecat_
 from barecat.core.index import BarecatDirInfo, BarecatFileInfo, Order
@@ -55,7 +60,9 @@ def generate_from_walks(roots, strip_root):
                 yield full_path, store_path
 
 
-def create(filesys_and_store_path_pairs, target_path, shard_size_limit, overwrite=False, workers=8):
+def create(
+    filesys_and_store_path_pairs, target_path, shard_size_limit, overwrite=False, workers=8
+):
     if workers is None:
         create_without_workers(
             filesys_and_store_path_pairs, target_path, shard_size_limit, overwrite
@@ -179,7 +186,9 @@ def merge_symlink(source_paths, target_path, overwrite=False, ignore_duplicates=
 def write_index(dictionary, target_path):
     with barecat_.Index(target_path, readonly=False) as index_writer:
         for path, (shard, offset, size) in dictionary.items():
-            index_writer.add_file(BarecatFileInfo(path=path, shard=shard, offset=offset, size=size))
+            index_writer.add_file(
+                BarecatFileInfo(path=path, shard=shard, offset=offset, size=size)
+            )
 
 
 def read_index(path):

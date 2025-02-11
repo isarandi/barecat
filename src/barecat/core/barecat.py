@@ -802,122 +802,127 @@ class Barecat(MutableMapping[str, Any]):
                 self.index.cursor.execute("DETACH DATABASE sourcedb")
                 raise ValueError('Files in the source archive are larger than the shard size')
 
-        # Upsert all directories
-        self.index.cursor.execute(
-            """
-            INSERT INTO dirs (
-                path, num_subdirs, num_files, size_tree, num_files_tree,
-                mode, uid, gid, mtime_ns)
-            SELECT path, num_subdirs, num_files, size_tree, num_files_tree,
-                mode, uid, gid, mtime_ns
-            FROM sourcedb.dirs WHERE true
-            ON CONFLICT (dirs.path) DO UPDATE SET
-                num_subdirs = num_subdirs + excluded.num_subdirs,
-                num_files = num_files + excluded.num_files,
-                size_tree = size_tree + excluded.size_tree,
-                num_files_tree = num_files_tree + excluded.num_files_tree,
-                mode = COALESCE(
-                    dirs.mode | excluded.mode,
-                    COALESCE(dirs.mode, 0) | excluded.mode,
-                    dirs.mode | COALESCE(excluded.mode, 0)),
-                uid = COALESCE(excluded.uid, dirs.uid),
-                gid = COALESCE(excluded.gid, dirs.gid),
-                mtime_ns = COALESCE(
-                    MAX(dirs.mtime_ns, excluded.mtime_ns),
-                    MAX(COALESCE(dirs.mtime_ns, 0), excluded.mtime_ns),
-                    MAX(dirs.mtime_ns, COALESCE(excluded.mtime_ns, 0)))
-            """
-        )
+        with self.no_triggers():
+            # Upsert all directories
+            self.index.cursor.execute(
+                """
+                INSERT INTO dirs (
+                    path, num_subdirs, num_files, size_tree, num_files_tree,
+                    mode, uid, gid, mtime_ns)
+                SELECT path, num_subdirs, num_files, size_tree, num_files_tree,
+                    mode, uid, gid, mtime_ns
+                FROM sourcedb.dirs WHERE true
+                ON CONFLICT (dirs.path) DO UPDATE SET
+                    num_subdirs = num_subdirs + excluded.num_subdirs,
+                    num_files = num_files + excluded.num_files,
+                    size_tree = size_tree + excluded.size_tree,
+                    num_files_tree = num_files_tree + excluded.num_files_tree,
+                    mode = coalesce(
+                        dirs.mode | excluded.mode,
+                        coalesce(dirs.mode, 0) | excluded.mode,
+                        dirs.mode | coalesce(excluded.mode, 0)),
+                    uid = coalesce(excluded.uid, dirs.uid),
+                    gid = coalesce(excluded.gid, dirs.gid),
+                    mtime_ns = coalesce(
+                        max(dirs.mtime_ns, excluded.mtime_ns),
+                        max(coalesce(dirs.mtime_ns, 0), excluded.mtime_ns),
+                        max(dirs.mtime_ns, coalesce(excluded.mtime_ns, 0)))
+                """
+            )
 
-        in_shard_number = 0
-        in_shard_path = f'{source_path}-shard-{in_shard_number:05d}'
-        in_shard = open(in_shard_path, 'rb')
-        in_shard_offset = 0
-        in_shard_end = self.index.fetch_one(
-            """
-            SELECT MAX(offset + size) FROM sourcedb.files WHERE shard=?
-            """,
-            (in_shard_number,),
-        )[0]
+            in_shard_number = 0
+            in_shard_path = f'{source_path}-shard-{in_shard_number:05d}'
+            in_shard = open(in_shard_path, 'rb')
+            in_shard_offset = 0
+            in_shard_end = self.index.fetch_one(
+                """
+                SELECT MAX(offset + size) FROM sourcedb.files WHERE shard=?
+                """,
+                (in_shard_number,),
+            )[0]
 
-        while True:
-            if self.shard_size_limit is not None:
-                out_shard_space_left = self.shard_size_limit - out_shard_offset
-                # check how much of the in_shard we can put in the current out_shard
-                fetched = self.index.fetch_one(
-                    """
-                    SELECT MAX(offset + size) - :in_shard_offset AS max_offset_size_adjusted
+            while True:
+                if self.shard_size_limit is not None:
+                    out_shard_space_left = self.shard_size_limit - out_shard_offset
+                    # check how much of the in_shard we can put in the current out_shard
+                    fetched = self.index.fetch_one(
+                        """
+                        SELECT MAX(offset + size) - :in_shard_offset AS max_offset_size_adjusted
+                        FROM sourcedb.files
+                        WHERE offset + size <= :in_shard_offset + :out_shard_space_left
+                        AND shard = :in_shard_number""",
+                        dict(
+                            in_shard_offset=in_shard_offset,
+                            out_shard_space_left=out_shard_space_left,
+                            in_shard_number=in_shard_number,
+                        ),
+                    )
+                    if fetched is None:
+                        # No file of the current in_shard fits in the current out_shard, must start a
+                        # new one
+                        self.sharder.start_new_shard()
+                        out_shard_number += 1
+                        out_shard_offset = 0
+                        continue
+
+                    max_copiable_amount = fetched[0]
+                else:
+                    max_copiable_amount = None
+
+                # now we need to update the index, but we need to update the offset and shard
+                # of the files that we copied
+                maybe_ignore = 'OR IGNORE' if ignore_duplicates else ''
+                self.index.cursor.execute(
+                    f"""
+                    INSERT {maybe_ignore} INTO files (
+                        path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
+                    SELECT path, :out_shard_number, offset - :in_shard_offset + :out_shard_offset,
+                        size, crc32c, mode, uid, gid, mtime_ns 
                     FROM sourcedb.files
-                    WHERE offset + size <= :in_shard_offset + :out_shard_space_left
-                    AND shard = :in_shard_number""",
+                    WHERE offset >= :in_shard_offset AND shard = :in_shard_number"""
+                    + (
+                        """
+                    AND offset + size <= :in_shard_offset + :max_copiable_amount
+                    """
+                        if max_copiable_amount is not None
+                        else ""
+                    ),
                     dict(
+                        out_shard_number=out_shard_number,
                         in_shard_offset=in_shard_offset,
-                        out_shard_space_left=out_shard_space_left,
+                        out_shard_offset=out_shard_offset,
                         in_shard_number=in_shard_number,
+                        max_copiable_amount=max_copiable_amount,
                     ),
                 )
-                if fetched is None:
-                    # No file of the current in_shard fits in the current out_shard, must start a
-                    # new one
-                    self.sharder.start_new_shard()
-                    out_shard_number += 1
-                    out_shard_offset = 0
-                    continue
+                copyfileobj(in_shard, out_shard, max_copiable_amount)
+                out_shard_offset = out_shard.tell()
+                in_shard_offset = in_shard.tell()
+                if in_shard_offset == in_shard_end:
+                    # we finished this in_shard, move to the next one
+                    in_shard.close()
+                    in_shard_number += 1
+                    in_shard_path = f'{source_path}-shard-{in_shard_number:05d}'
+                    try:
+                        in_shard = open(in_shard_path, 'rb')
+                    except FileNotFoundError:
+                        # done with all in_shards of this source
+                        break
+                    in_shard_offset = 0
+                    in_shard_end = self.index.fetch_one(
+                        """
+                        SELECT MAX(offset + size) FROM sourcedb.files WHERE shard=?
+                        """,
+                        (in_shard_number,),
+                    )[0]
 
-                max_copiable_amount = fetched[0]
-            else:
-                max_copiable_amount = None
+            in_shard.close()
+            self.index.conn.commit()
+            self.index.cursor.execute("DETACH DATABASE sourcedb")
 
-            # now we need to update the index, but we need to update the offset and shard
-            # of the files that we copied
-            maybe_ignore = 'OR IGNORE' if ignore_duplicates else ''
-            self.index.cursor.execute(
-                f"""
-                INSERT {maybe_ignore} INTO files (
-                    path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
-                SELECT path, :out_shard_number, offset - :in_shard_offset + :out_shard_offset,
-                    size, crc32c, mode, uid, gid, mtime_ns 
-                FROM sourcedb.files
-                WHERE offset >= :in_shard_offset AND shard = :in_shard_number"""
-                + (
-                    """
-                AND offset + size <= :in_shard_offset + :max_copiable_amount
-                """
-                    if max_copiable_amount is not None
-                    else ""
-                ),
-                dict(
-                    out_shard_number=out_shard_number,
-                    in_shard_offset=in_shard_offset,
-                    out_shard_offset=out_shard_offset,
-                    in_shard_number=in_shard_number,
-                    max_copiable_amount=max_copiable_amount,
-                ),
-            )
-            copyfileobj(in_shard, out_shard, max_copiable_amount)
-            out_shard_offset = out_shard.tell()
-            in_shard_offset = in_shard.tell()
-            if in_shard_offset == in_shard_end:
-                # we finished this in_shard, move to the next one
-                in_shard.close()
-                in_shard_number += 1
-                in_shard_path = f'{source_path}-shard-{in_shard_number:05d}'
-                try:
-                    in_shard = open(in_shard_path, 'rb')
-                except FileNotFoundError:
-                    # done with all in_shards of this source
-                    break
-                in_shard_offset = 0
-                in_shard_end = self.index.fetch_one(
-                    """
-                    SELECT MAX(offset + size) FROM sourcedb.files WHERE shard=?
-                    """,
-                    (in_shard_number,),
-                )[0]
-
-        in_shard.close()
-        self.index.conn.commit()
-        self.index.cursor.execute("DETACH DATABASE sourcedb")
+            if ignore_duplicates:
+                self.update_treestats()
+                self.conn.commit()
 
     @property
     def shard_size_limit(self) -> int:

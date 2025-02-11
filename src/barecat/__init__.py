@@ -1,10 +1,10 @@
 """Barecat is a fast random-access, mountable archive format for storing and accessing many small
  files."""
 
-from barecat.core.barecat import Barecat
-from barecat.core.index import Index
+from .core.barecat import Barecat
+from .core.index import Index
 
-from barecat.cli_impl import (
+from .cli_impl import (
     archive2barecat,
     barecat2archive,
     extract,
@@ -13,7 +13,7 @@ from barecat.cli_impl import (
     read_index,
     write_index,
 )
-from barecat.common import (
+from .common import (
     BarecatFileInfo,
     BarecatDirInfo,
     BarecatEntryInfo,
@@ -22,7 +22,7 @@ from barecat.common import (
     SHARD_SIZE_UNLIMITED,
 )
 
-from barecat.exceptions import (
+from .exceptions import (
     BarecatError,
     BarecatIntegrityError,
     FileExistsBarecatError,
@@ -32,7 +32,7 @@ from barecat.exceptions import (
     DirectoryNotEmptyBarecatError,
 )
 
-from barecat.threadsafe import get_cached_reader
+from .threadsafe import get_cached_reader
 
 
 def open(path, mode='r', auto_codec=False, threadsafe_reader=True):
