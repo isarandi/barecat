@@ -251,6 +251,7 @@ class Barecat(MutableMapping[str, Any]):
             b'Hello, world!'
 
         """
+
         self.add(path, data=self.encode(path, content))
 
     def setdefault(self, key: str, default: Any = None, /):
@@ -620,7 +621,7 @@ class Barecat(MutableMapping[str, Any]):
     @raise_if_readonly
     def add(
         self,
-        info: BarecatEntryInfo,
+        item: Union[BarecatEntryInfo | str],
         *,
         data: Optional[bytes] = None,
         fileobj=None,
@@ -630,7 +631,7 @@ class Barecat(MutableMapping[str, Any]):
         """Add a file or directory to the archive.
 
         Args:
-            info: BarecatFileInfo or BarecatDirInfo object to add.
+            item: BarecatFileInfo or BarecatDirInfo object to add or a target path for a file.
             data: File content. If None, the data is read from the file object.
             fileobj: File-like object to read the data from.
             bufsize: Buffer size to use when reading from the file object.
@@ -647,23 +648,22 @@ class Barecat(MutableMapping[str, Any]):
             >>> bc.add(BarecatFileInfo(path='file.txt', mode=0o666), data=b'Hello, world!')
             >>> bc.add(BarecatDirInfo(path='dir', mode=0o777))
         """
-        if isinstance(info, BarecatDirInfo):
-            self.index.add_dir(info, exist_ok=dir_exist_ok)
+        if isinstance(item, BarecatDirInfo):
+            self.index.add_dir(item, exist_ok=dir_exist_ok)
             return
 
-        assert isinstance(info, BarecatFileInfo)
-
-        info.shard, info.offset, info.size, info.crc32c = self.sharder.add(
-            size=info.size, data=data, fileobj=fileobj, bufsize=bufsize
+        finfo = BarecatFileInfo(path=item) if isinstance(item, str) else item
+        finfo.shard, finfo.offset, finfo.size, finfo.crc32c = self.sharder.add(
+            size=finfo.size, data=data, fileobj=fileobj, bufsize=bufsize
         )
 
         try:
-            self.index.add_file(info)
+            self.index.add_file(finfo)
         except FileExistsBarecatError:
             # If the file already exists, we need to truncate the shard file back
-            shard_file = self.sharder.shard_files[info.shard]
+            shard_file = self.sharder.shard_files[finfo.shard]
             with open(shard_file.name, 'r+b') as f:
-                f.truncate(info.offset)
+                f.truncate(finfo.offset)
             raise
 
     # DELETION
