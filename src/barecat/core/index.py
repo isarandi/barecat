@@ -86,6 +86,8 @@ class Index(AbstractContextManager):
             if shard_size_limit is not None:
                 self.shard_size_limit = shard_size_limit
 
+        self.is_closed = False
+
     # READING
     def lookup_file(self, path: str, normalized: bool = False) -> BarecatFileInfo:
         """Look up a file by its path.
@@ -1636,11 +1638,14 @@ class Index(AbstractContextManager):
 
     def close(self):
         """Close the index."""
+        if self.is_closed:
+            return
         self.cursor.close()
         if not self.readonly:
             self.conn.commit()
             self.conn.execute('PRAGMA optimize')
         self.conn.close()
+        self.is_closed = True
 
     def optimize(self):
         """Optimize the index."""
@@ -1652,6 +1657,10 @@ class Index(AbstractContextManager):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit the context manager."""
+        self.close()
+
+    def __del__(self):
+        """Commit when the object is deleted."""
         self.close()
 
 
