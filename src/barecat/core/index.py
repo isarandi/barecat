@@ -1009,7 +1009,7 @@ class Index(AbstractContextManager):
         except sqlite3.IntegrityError as e:
             raise FileExistsBarecatError(finfo.path) from e
 
-    def move_file(self, path: int, new_shard: int, new_offset: int):
+    def move_file(self, path: str, new_shard: int, new_offset: int):
         path = normalize_path(path)
         self.cursor.execute(
             """
