@@ -115,7 +115,7 @@ class BarecatDefragger:
 
                 new_offset += fi.size
 
-            # Truncate the last shard to uts real size (the others are truncated already)
+            # Truncate the last shard to its real size (the others are truncated already)
             self.shard_files[new_shard].truncate(new_offset)
             # Close and delete all shards after the last one
             for i in range(new_shard + 1, len(self.shard_files)):
