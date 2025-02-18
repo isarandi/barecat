@@ -675,7 +675,7 @@ class Index(AbstractContextManager):
         pattern = normalize_path(pattern)
         yield from self.fetch_iter(
             """
-            SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns 
+            SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns
             FROM files WHERE path GLOB :pattern
             """,
             dict(pattern=pattern),
@@ -687,13 +687,38 @@ class Index(AbstractContextManager):
         yield from self.fetch_iter(
             """
             SELECT path, num_subdirs, num_files, size_tree, num_files_tree,
-                   mode, uid, gid, mtime_ns 
+                   mode, uid, gid, mtime_ns
             FROM dirs WHERE path GLOB :pattern
             """,
             dict(pattern=pattern),
             bufsize=bufsize,
             rowcls=BarecatDirInfo,
         )
+
+    def raw_iterglob_infos_incl_excl(self, patterns, only_files=False, bufsize=None):
+        pattern_dict = {f'pattern{i}': normalize_path(p[1]) for i, p in enumerate(patterns)}
+        globexpr = f'path GLOB :pattern{0}' if patterns[0][0] else f'path NOT GLOB :pattern{0}'
+        for i, p in enumerate(patterns[1:], start=1):
+            globexpr += (
+                f' OR path GLOB :pattern{i}'
+                if p[0]
+                else f' AND path NOT GLOB :pattern{i}'
+            )
+
+        fquery = f"""
+            SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns 
+            FROM files WHERE {globexpr}
+            """
+        yield from self.fetch_iter(fquery, pattern_dict, bufsize=bufsize, rowcls=BarecatFileInfo)
+        if only_files:
+            return
+
+        dquery = f"""
+            SELECT path, num_subdirs, num_files, size_tree, num_files_tree,
+                   mode, uid, gid, mtime_ns 
+            FROM dirs WHERE {globexpr}
+            """
+        yield from self.fetch_iter(dquery, pattern_dict, bufsize=bufsize, rowcls=BarecatDirInfo)
 
     def iterglob_infos(
         self,

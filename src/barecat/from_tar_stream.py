@@ -28,16 +28,16 @@ def main():
         with tarfile.open(fileobj=sys.stdin.buffer, mode='r|') as tar:
             for member in tar:
                 if member.isdir():
-                    di = BarecatDirInfo(
+                    dinfo = BarecatDirInfo(
                         path=member.name,
                         mode=member.mode,
                         uid=member.uid,
                         gid=member.gid,
                         mtime_ns=member.mtime * 1_000_000_000,
                     )
-                    writer.add(di, dir_exist_ok=True)
+                    writer.add(dinfo, dir_exist_ok=True)
                 if member.isfile():
-                    fi = BarecatFileInfo(
+                    finfo = BarecatFileInfo(
                         path=member.name,
                         size=member.size,
                         mode=member.mode,
@@ -46,7 +46,7 @@ def main():
                         mtime_ns=member.mtime * 1_000_000_000,
                     )
                     with tar.extractfile(member) as file_in_tar:
-                        writer.add(fi, fileobj=file_in_tar, dir_exist_ok=True)
+                        writer.add(finfo, fileobj=file_in_tar)
 
 
 if __name__ == '__main__':
