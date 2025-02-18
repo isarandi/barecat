@@ -809,7 +809,7 @@ class Index(AbstractContextManager):
         dirs_to_walk = iter([rootinfo])
 
         while (dinfo := next(dirs_to_walk, None)) is not None:
-            subdirs = self.iter_subdir_dirinfos(dinfo, bufsize=bufsize)
+            subdirs = RecallableIter(self.iter_subdir_dirinfos(dinfo, bufsize=bufsize))
             files = self.iter_direct_fileinfos(dinfo, bufsize=bufsize)
             yield dinfo, subdirs, files
             dirs_to_walk = iter(itertools.chain(subdirs, dirs_to_walk))
@@ -1681,3 +1681,36 @@ class Fetcher:
         cursor.row_factory = rowcls.row_factory if rowcls is not None else self.row_factory
         cursor.execute(query, params)
         return cursor.fetchmany(bufsize)
+
+
+class RecallableIter:
+    """An iterable that wraps an iterator so that it can be recalled to the beginning and iterated again."""
+
+    def __init__(self, iterator):
+        self.cached_items = []
+        self.iterator = iter(iterator)
+
+    def advance(self):
+        result = next(self.iterator)
+        self.cached_items.append(result)
+        return result
+
+    def __iter__(self):
+        return self._Iterator(self)
+
+    class _Iterator:
+        def __init__(self, recall_iter: 'RecallableIter'):
+            self.recallable_iter = recall_iter
+            self.next_index = 0
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            if self.next_index < len(self.recallable_iter.cached_items):
+                result = self.recallable_iter.cached_items[self.next_index]
+                self.next_index += 1
+                return result
+            else:
+                self.next_index += 1
+                return self.recallable_iter.advance()
