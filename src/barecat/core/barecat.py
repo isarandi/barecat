@@ -621,7 +621,7 @@ class Barecat(MutableMapping[str, Any]):
     @raise_if_readonly
     def add(
         self,
-        item: Union[BarecatEntryInfo | str],
+        item: Union[BarecatEntryInfo, str],
         *,
         data: Optional[bytes] = None,
         fileobj=None,
