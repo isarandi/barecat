@@ -6,7 +6,7 @@ import os.path as osp
 import re
 import sqlite3
 from datetime import datetime
-from typing import Iterable, Iterator, Optional, Union, TYPE_CHECKING
+from typing import Iterable, Iterator, Optional, TYPE_CHECKING, Union
 
 import barecat.util
 
@@ -526,7 +526,9 @@ class Index(AbstractContextManager):
         rows = self.fetch_all(query, dict(pattern=pattern))
         return [row['path'] for row in rows]
 
-    def raw_iterglob_paths(self, pattern, order: Order = Order.ANY, only_files=False, bufsize=None):
+    def raw_iterglob_paths(
+        self, pattern, order: Order = Order.ANY, only_files=False, bufsize=None
+    ):
         pattern = normalize_path(pattern)
         if only_files:
             query = """
@@ -627,7 +629,9 @@ class Index(AbstractContextManager):
         ):
             if not only_files and self.isdir(pattern[:-3]):
                 yield pattern[:-3]
-            yield from self.raw_iterglob_paths(pattern[:-1], bufsize=bufsize, only_files=only_files)
+            yield from self.raw_iterglob_paths(
+                pattern[:-1], bufsize=bufsize, only_files=only_files
+            )
             return
 
         regex_pattern = glob_to_regex(pattern, recursive=recursive, include_hidden=include_hidden)
@@ -638,7 +642,9 @@ class Index(AbstractContextManager):
             wildcard_is_in_last_part = i_has_wildcard == len(parts) - 1
             if wildcard_is_in_last_part:
                 info_generator = (
-                    self.iter_direct_fileinfos(prefix) if only_files else self.iterdir_infos(prefix)
+                    self.iter_direct_fileinfos(prefix)
+                    if only_files
+                    else self.iterdir_infos(prefix)
                 )
                 for info in info_generator:
                     if re.match(regex_pattern, info.path):
@@ -745,7 +751,9 @@ class Index(AbstractContextManager):
         ):
             if not only_files and self.isdir(pattern[:-3]):
                 yield pattern[:-3]
-            yield from self.raw_iterglob_infos(pattern[:-1], bufsize=bufsize, only_files=only_files)
+            yield from self.raw_iterglob_infos(
+                pattern[:-1], bufsize=bufsize, only_files=only_files
+            )
             return
 
         regex_pattern = glob_to_regex(pattern, recursive=recursive, include_hidden=include_hidden)
@@ -756,7 +764,9 @@ class Index(AbstractContextManager):
             wildcard_is_in_last_part = i_has_wildcard == len(parts) - 1
             if wildcard_is_in_last_part:
                 info_generator = (
-                    self.iter_direct_fileinfos(prefix) if only_files else self.iterdir_infos(prefix)
+                    self.iter_direct_fileinfos(prefix)
+                    if only_files
+                    else self.iterdir_infos(prefix)
                 )
                 for info in info_generator:
                     if re.match(regex_pattern, info.path):
@@ -860,7 +870,9 @@ class Index(AbstractContextManager):
                 rowcls=BarecatFileInfo,
             )
         except LookupError:
-            raise FileNotFoundBarecatError(f'File with shard {shard} and offset {offset} not found')
+            raise FileNotFoundBarecatError(
+                f'File with shard {shard} and offset {offset} not found'
+            )
 
     def get_last_file(self):
         """Return the last file in the index, i.e., the one with the highest offset in the last
