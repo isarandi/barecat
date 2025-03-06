@@ -58,6 +58,13 @@ class IsADirectoryBarecatError(BarecatError):
         super().__init__(f'Is a directory: {path}')
 
 
+class NotADirectoryBarecatError(BarecatError):
+    """Exception raised when trying to access a file as a directory."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
 class BarecatIntegrityError(BarecatError):
     """Exception raised when the CRC32C checksum of a file does not match the expected checksum"""
 

@@ -4,12 +4,12 @@ import os.path as osp
 import shutil
 import stat
 from collections.abc import Callable, Iterator, MutableMapping
+from contextlib import AbstractContextManager
 from typing import Any, Optional, TYPE_CHECKING, Union
-
-import crc32c as crc32c_lib
 
 import barecat.progbar
 import barecat.util
+import crc32c as crc32c_lib
 from barecat.core.sharder import Sharder
 from barecat.defrag import BarecatDefragger
 from barecat.exceptions import (
@@ -26,7 +26,7 @@ else:
     from barecat.core.index import Index, normalize_path
 
 
-class Barecat(MutableMapping[str, Any]):
+class Barecat(MutableMapping[str, Any], AbstractContextManager):
     """Object for reading or writing a Barecat archive.
 
     A Barecat archive consists of several (large) shard files, each containing the data of multiple
@@ -794,7 +794,9 @@ class Barecat(MutableMapping[str, Any]):
         out_shard_offset = out_shard.tell()
 
         source_index_path = f'{source_path}-sqlite-index'
-        self.index.cursor.execute(f"ATTACH DATABASE 'file:{source_index_path}?mode=ro' AS sourcedb")
+        self.index.cursor.execute(
+            f"ATTACH DATABASE 'file:{source_index_path}?mode=ro' AS sourcedb"
+        )
 
         if self.shard_size_limit is not None:
             in_max_size = self.index.fetch_one("SELECT MAX(size) FROM sourcedb.files")[0]
@@ -802,7 +804,7 @@ class Barecat(MutableMapping[str, Any]):
                 self.index.cursor.execute("DETACH DATABASE sourcedb")
                 raise ValueError('Files in the source archive are larger than the shard size')
 
-        with self.no_triggers():
+        with self.index.no_triggers():
             # Upsert all directories
             self.index.cursor.execute(
                 """
@@ -876,7 +878,7 @@ class Barecat(MutableMapping[str, Any]):
                     f"""
                     INSERT {maybe_ignore} INTO files (
                         path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
-                    SELECT path, :out_shard_number, offset - :in_shard_offset + :out_shard_offset,
+                    SELECT path, :out_shard_number, offset + :out_minus_in_shard_offset,
                         size, crc32c, mode, uid, gid, mtime_ns 
                     FROM sourcedb.files
                     WHERE offset >= :in_shard_offset AND shard = :in_shard_number"""
@@ -890,7 +892,7 @@ class Barecat(MutableMapping[str, Any]):
                     dict(
                         out_shard_number=out_shard_number,
                         in_shard_offset=in_shard_offset,
-                        out_shard_offset=out_shard_offset,
+                        out_minus_in_shard_offset=out_shard_offset - in_shard_offset,
                         in_shard_number=in_shard_number,
                         max_copiable_amount=max_copiable_amount,
                     ),
@@ -921,8 +923,8 @@ class Barecat(MutableMapping[str, Any]):
             self.index.cursor.execute("DETACH DATABASE sourcedb")
 
             if ignore_duplicates:
-                self.update_treestats()
-                self.conn.commit()
+                self.index.update_treestats()
+                self.index.conn.commit()
 
     @property
     def shard_size_limit(self) -> int:
@@ -1111,6 +1113,9 @@ class Barecat(MutableMapping[str, Any]):
             self.codecs[ext] = (encoder, decoder, nonfinal)
 
     def encode(self, path, data):
+        if not self.codecs:
+            return data
+
         noext, ext = osp.splitext(path)
         try:
             encoder, decoder, nonfinal = self.codecs[ext.lower()]
@@ -1122,6 +1127,8 @@ class Barecat(MutableMapping[str, Any]):
             return encoder(data)
 
     def decode(self, path, data):
+        if not self.codecs:
+            return data
         noext, ext = osp.splitext(path)
         try:
             encoder, decoder, nonfinal = self.codecs[ext.lower()]
@@ -1171,10 +1178,6 @@ class Barecat(MutableMapping[str, Any]):
 
         self.index.close()
         self.sharder.close()
-
-    def __enter__(self):
-        """Enter a context manager."""
-        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit a context manager."""

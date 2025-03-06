@@ -6,33 +6,34 @@ import barecat
 import barecat.cython
 from barecat.consumed_threadpool import ConsumedThreadPool
 from barecat.progbar import progressbar
-import glob
 
 
 def main():
     parser = argparse.ArgumentParser(description='Migrate index database to new version')
-    parser.add_argument('path_in', type=str, help='Path to the old barecat')
-    parser.add_argument('path_out', type=str, help='Path to the new barecat')
-    parser.add_argument('--workers', type=int, default=8, help='Number of workers for calculating crc32c')
+    parser.add_argument('path', type=str, help='Path to the old barecat')
+    parser.add_argument(
+        '--workers', type=int, default=8, help='Number of workers for calculating crc32c'
+    )
 
     args = parser.parse_args()
-    symlink_shards(args.path_in, args.path_out)
-    upgrade_schema(args.path_in, args.path_out)
-    update_crc32c(args.path_out, workers=args.workers)
+    dbase_path = args.path + '-sqlite-index'
+    if not os.path.exists(dbase_path):
+        raise FileNotFoundError(f'{dbase_path} does not exist!')
+
+    os.rename(args.path + '-sqlite-index', args.path + '-sqlite-index.old')
+    upgrade_schema(args.path)
+    update_crc32c(args.path, workers=args.workers)
 
 
-def upgrade_schema(path_in: str, path_out: str):
-    if os.path.exists(path_out + '-sqlite-index'):
-        raise FileExistsError(f'Output path {path_out}-sqlite-index already exists')
+def upgrade_schema(path: str):
     with barecat.Index(path_out + '-sqlite-index', readonly=False) as index_out:
-        # index_out.no_foreign_keys()
         c = index_out.cursor
-        c.execute("COMMIT")
+        c.execute('COMMIT')
         c.execute('PRAGMA foreign_keys=OFF')
         c.execute('PRAGMA synchronous=OFF')
         c.execute('PRAGMA journal_mode=OFF')
         c.execute('PRAGMA recursive_triggers=ON')
-        c.execute(f'ATTACH DATABASE "file:{path_in}-sqlite-index?mode=ro" AS source')
+        c.execute(f'ATTACH DATABASE "file:{path}-sqlite-index.old?mode=ro" AS source')
         print('Migrating dir metadata...')
         c.execute(
             """
@@ -50,7 +51,7 @@ def upgrade_schema(path_in: str, path_out: str):
             """
         )
 
-        index_out.conn.commit()
+        c.execute('COMMIT')
         c.execute("DETACH DATABASE source")
 
 
@@ -60,7 +61,7 @@ def update_crc32c(path_out: str, workers=8):
         barecat.Index(path_out + '-sqlite-index', readonly=False) as index,
     ):
         c = index.cursor
-        c.execute("COMMIT")
+        c.execute('COMMIT')
         c.execute('PRAGMA synchronous=OFF')
         c.execute('PRAGMA journal_mode=OFF')
         index._triggers_enabled = False
@@ -76,7 +77,9 @@ def update_crc32c(path_out: str, workers=8):
             for fi in progressbar(
                 index.iter_all_fileinfos(order=barecat.Order.ADDRESS), total=index.num_files
             ):
-                ctp.submit(sh.crc32c_from_address, fi.path, args=(fi.shard, fi.offset, fi.size))
+                ctp.submit(
+                    sh.crc32c_from_address, userdata=fi.path, args=(fi.shard, fi.offset, fi.size)
+                )
 
         print('Updating crc32c in the barecat index...')
         c.execute(f'ATTACH DATABASE "file:{path_newcrc_temp}?mode=ro" AS newdb')
@@ -88,8 +91,8 @@ def update_crc32c(path_out: str, workers=8):
             WHERE files.path=newdb.crc32c.path
             """
         )
-        index.conn.commit()
-        c.execute("DETACH DATABASE newdb")
+        c.execute('COMMIT')
+        c.execute('DETACH DATABASE newdb')
 
     os.remove(path_newcrc_temp)
 
@@ -97,30 +100,14 @@ def update_crc32c(path_out: str, workers=8):
 def temp_crc_writer_main(dbpath, future_iter):
     with sqlite3.connect(dbpath) as conn:
         c = conn.cursor()
-        c.execute("PRAGMA synchronous=OFF")
-        c.execute("PRAGMA journal_mode=OFF")
+        c.execute('COMMIT')
+        c.execute('PRAGMA synchronous=OFF')
+        c.execute('PRAGMA journal_mode=OFF')
         c.execute("CREATE TABLE IF NOT EXISTS crc32c (path TEXT PRIMARY KEY, crc32c INTEGER)")
         for future in future_iter:
             path = future.userdata
             crc32c = future.result()
             c.execute("INSERT INTO crc32c (path, crc32c) VALUES (?, ?)", (path, crc32c))
-
-
-def symlink_shards(path_in: str, path_out: str):
-    shard_paths = glob.glob(f'{path_in}-shard-?????')
-    for shard_path in shard_paths:
-        i = int(shard_path[-5:])
-        make_relative_symlink(shard_path, f'{path_out}-shard-{i:05d}', overwrite=True)
-
-
-def make_relative_symlink(source, target, overwrite=False):
-    relative_source = os.path.relpath(source, start=os.path.dirname(target))
-    if os.path.exists(target):
-        if overwrite:
-            os.remove(target)
-        else:
-            raise FileExistsError(f'Target {target} already exists')
-    os.symlink(relative_source, target)
 
 
 if __name__ == '__main__':

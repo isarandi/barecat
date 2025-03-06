@@ -20,6 +20,8 @@ from barecat.exceptions import (
     DirectoryNotEmptyBarecatError,
     FileExistsBarecatError,
     FileNotFoundBarecatError,
+    IsADirectoryBarecatError,
+    NotADirectoryBarecatError,
 )
 from barecat.glob_to_regex import glob_to_regex
 from barecat.util import datetime_to_ns, normalize_path
@@ -60,6 +62,7 @@ class Index(AbstractContextManager):
 
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
+        self.cursor.arraysize = bufsize if bufsize is not None else 128
         self.fetcher = Fetcher(self.conn, self.cursor, bufsize=bufsize)
         self.fetch_one = self.fetcher.fetch_one
         self.fetch_one_or_raise = self.fetcher.fetch_one_or_raise
@@ -81,10 +84,14 @@ class Index(AbstractContextManager):
         if not self.readonly:
             self.cursor.execute('PRAGMA recursive_triggers = ON')
             self.cursor.execute('PRAGMA foreign_keys = ON')
+            # self.cursor.execute('PRAGMA synchronous = NORMAL')
             self._triggers_enabled = True
             self._foreign_keys_enabled = True
             if shard_size_limit is not None:
                 self.shard_size_limit = shard_size_limit
+
+        self.cursor.execute('PRAGMA temp_store = memory')
+        self.cursor.execute('PRAGMA mmap_size = 30000000000')
 
         self.is_closed = False
 
@@ -313,14 +320,16 @@ class Index(AbstractContextManager):
     def iter_all_filepaths(
         self, order: Order = Order.ANY, bufsize: Optional[int] = None
     ) -> Iterator[str]:
-        for finfo in self.iter_all_fileinfos(order=order, bufsize=bufsize):
-            yield finfo.path
+        query = "SELECT path FROM files" + order.as_query_text()
+        for row in self.fetch_iter(query, bufsize=bufsize):
+            yield row['path']
 
     def iter_all_dirpaths(
         self, order: Order = Order.ANY, bufsize: Optional[int] = None
     ) -> Iterator[str]:
-        for dinfo in self.iter_all_dirinfos(order=order, bufsize=bufsize):
-            yield dinfo.path
+        query = "SELECT path FROM dirs" + order.as_query_text()
+        for row in self.fetch_iter(query, bufsize=bufsize):
+            yield row['path']
 
     def iter_all_paths(
         self, order: Order = Order.ANY, bufsize: Optional[int] = None
@@ -699,11 +708,7 @@ class Index(AbstractContextManager):
         pattern_dict = {f'pattern{i}': normalize_path(p[1]) for i, p in enumerate(patterns)}
         globexpr = f'path GLOB :pattern{0}' if patterns[0][0] else f'path NOT GLOB :pattern{0}'
         for i, p in enumerate(patterns[1:], start=1):
-            globexpr += (
-                f' OR path GLOB :pattern{i}'
-                if p[0]
-                else f' AND path NOT GLOB :pattern{i}'
-            )
+            globexpr += f' OR path GLOB :pattern{i}' if p[0] else f' AND path NOT GLOB :pattern{i}'
 
         fquery = f"""
             SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns 
@@ -1075,25 +1080,31 @@ class Index(AbstractContextManager):
         except sqlite3.IntegrityError as e:
             raise FileExistsBarecatError(dinfo.path) from e
 
-    def rename(self, old: Union[BarecatEntryInfo, str], new: str):
+    def rename(self, old: Union[BarecatEntryInfo, str], new: str, allow_overwrite: bool = False):
         """Rename a file or directory in the index.
 
         Args:
             old: Path of the file or directory or the file or directory info object.
             new: New path.
+            allow_overwrite: if True and a file with path `new` already exists, then it is removed first.
+                if False, an exception is raised.
 
         Raises:
             FileNotFoundBarecatError: If the file or directory is not found.
-            FileExistsBarecatError: If the new path already exists.
+            FileExistsBarecatError: If the new path already exists and `allow_overwrite` is False.
+            IsADirectoryBarecatError: If the new path is a directory.
+            DirectoryNotEmptyBarecatError: If the new path is a non-empty directory.
         """
         if isinstance(old, BarecatFileInfo) or (isinstance(old, str) and self.isfile(old)):
-            self.rename_file(old, new)
+            self.rename_file(old, new, allow_overwrite)
         elif isinstance(old, BarecatDirInfo) or (isinstance(old, str) and self.isdir(old)):
-            self.rename_dir(old, new)
+            self.rename_dir(old, new, allow_overwrite)
         else:
             raise FileNotFoundBarecatError(old)
 
-    def rename_file(self, old: Union[BarecatFileInfo, str], new: str):
+    def rename_file(
+        self, old: Union[BarecatFileInfo, str], new: str, allow_overwrite: bool = False
+    ):
         """Rename a file in the index.
 
         Args:
@@ -1102,12 +1113,19 @@ class Index(AbstractContextManager):
 
         Raises:
             FileNotFoundBarecatError: If the file is not found.
-            FileExistsBarecatError: If the new path already exists.
+            FileExistsBarecatError: If the new path already exists and `allow_overwrite` is False.
+            IsADirectoryBarecatError: If the new path is a directory.
         """
         old_path = self._as_path(old)
         new_path = normalize_path(new)
-        if self.exists(new_path):
-            raise FileExistsBarecatError(new_path)
+        if self.isfile(new_path):
+            if allow_overwrite:
+                self.remove_file(new_path)
+            else:
+                raise FileExistsBarecatError(new_path)
+
+        if self.isdir(new_path):
+            raise IsADirectoryBarecatError(new_path)
 
         try:
             self.cursor.execute(
@@ -1119,7 +1137,7 @@ class Index(AbstractContextManager):
         except sqlite3.IntegrityError:
             raise FileExistsBarecatError(new_path)
 
-    def rename_dir(self, old: Union[BarecatDirInfo, str], new: str):
+    def rename_dir(self, old: Union[BarecatDirInfo, str], new: str, allow_overwrite: bool = False):
         """Rename a directory in the index.
 
         Args:
@@ -1129,6 +1147,8 @@ class Index(AbstractContextManager):
         Raises:
             FileNotFoundBarecatError: If the directory is not found.
             FileExistsBarecatError: If the new path already exists.
+            NotADirectoryBarecatError: If the new path is a file.
+            DirectoryNotEmptyBarecatError: If the new path is a non-empty directory.
         """
 
         old_path = self._as_path(old)
@@ -1138,8 +1158,14 @@ class Index(AbstractContextManager):
         if old_path == '':
             raise BarecatError('Cannot rename the root directory')
 
-        if self.exists(new_path):
-            raise FileExistsBarecatError(new_path)
+        if self.isfile(new_path):
+            raise NotADirectoryBarecatError(new_path)
+
+        if self.isdir(new_path):
+            if allow_overwrite:
+                self.remove_empty_dir(new_path)
+            else:
+                raise FileExistsBarecatError(new_path)
 
         dinfo = self._as_dirinfo(old)
 
@@ -1227,7 +1253,7 @@ class Index(AbstractContextManager):
             FileNotFoundBarecatError: If the directory is not found.
         """
         dinfo = self._as_dirinfo(item)
-        if dinfo.num_files != 0 or dinfo.num_subdirs != 0:
+        if dinfo.num_entries != 0:
             raise DirectoryNotEmptyBarecatError(item)
         self.cursor.execute('DELETE FROM dirs WHERE path=?', (dinfo.path,))
 
@@ -1692,7 +1718,12 @@ class Index(AbstractContextManager):
 class Fetcher:
     def __init__(self, conn, cursor=None, bufsize=None, row_factory=sqlite3.Row):
         self.conn = conn
-        self.cursor = conn.cursor() if cursor is None else cursor
+        if cursor is None:
+            self.cursor = conn.cursor()
+            self.cursor.arraysize = bufsize if bufsize is not None else 128
+        else:
+            self.cursor = cursor
+
         self.bufsize = bufsize if bufsize is not None else self.cursor.arraysize
         self.row_factory = row_factory
 

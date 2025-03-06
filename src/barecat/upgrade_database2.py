@@ -18,16 +18,15 @@ def upgrade_schema(path_in: str, path_out: str):
     if os.path.exists(path_out + '-sqlite-index'):
         raise FileExistsError(f'Output path {path_out}-sqlite-index already exists')
     with barecat.Index(path_out + '-sqlite-index', readonly=False) as index_out:
-        # index_out.no_foreign_keys()
         c = index_out.cursor
         c.execute('COMMIT')
         c.execute('PRAGMA foreign_keys=OFF')
         c.execute('PRAGMA synchronous=OFF')
         c.execute('PRAGMA journal_mode=OFF')
         c.execute(f'ATTACH DATABASE "file:{path_in}-sqlite-index?mode=ro" AS source')
-        print('Migrating dir metadata...')
 
         with index_out.no_triggers(), index_out.no_foreign_keys():
+            print('Migrating dir metadata...')
             c.execute(
                 """
                 INSERT INTO dirs (
@@ -39,6 +38,15 @@ def upgrade_schema(path_in: str, path_out: str):
                 WHERE path != ''
                 """
             )
+            c.execute("""
+                UPDATE dirs
+                SET (num_subdirs, num_files, num_files_tree, size_tree, mode, uid, gid, mtime_ns) =
+                    (SELECT num_subdirs, num_files, num_files_tree, size_tree, mode, uid, gid, mtime_ns 
+                     FROM source.dirs WHERE path = '')
+                WHERE path = ''
+            """)
+
+
             print('Migrating file metadata...')
             c.execute(
                 f"""

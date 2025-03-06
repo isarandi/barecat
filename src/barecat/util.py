@@ -273,7 +273,7 @@ def parse_size(size):
 
     for unit, factor in units.items():
         if unit in size:
-            return int(float(size.replace(unit, "")) * factor)
+            return int(float(size.replace(unit, '')) * factor)
 
     return int(size)
 

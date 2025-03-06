@@ -161,7 +161,7 @@ def merge(source_paths, target_path, shard_size_limit, overwrite=False, ignore_d
 
 def merge_symlink(source_paths, target_path, overwrite=False, ignore_duplicates=False):
     index_path = f'{target_path}-sqlite-index'
-    if overwrite and os.path.exists(index_path):
+    if overwrite and osp.exists(index_path):
         os.remove(index_path)
 
     with barecat_.Index(index_path, readonly=False) as index_writer:
@@ -177,7 +177,7 @@ def merge_symlink(source_paths, target_path, overwrite=False, ignore_duplicates=
             )
             for shard_path in sorted(glob.glob(f'{source_path}-shard-*')):
                 os.symlink(
-                    os.path.relpath(shard_path, start=os.path.dirname(target_path)),
+                    osp.relpath(shard_path, start=osp.dirname(target_path)),
                     f'{target_path}-shard-{i_out_shard:05d}',
                 )
                 i_out_shard += 1
@@ -218,7 +218,7 @@ def archive2barecat(src_path, target_path, shard_size_limit, overwrite=False):
 
 def wrap_archive(src_path, target_path, overwrite=False):
     index_path = f'{target_path}-sqlite-index'
-    if overwrite and os.path.exists(index_path):
+    if overwrite and osp.exists(index_path):
         os.remove(index_path)
 
     with barecat_.Index(target_path, readonly=False) as index:

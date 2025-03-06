@@ -82,8 +82,7 @@ cdef class BarecatCython:
         cdef size_t size
         cdef int rc
         cdef const char * path_c = path_b
-        with nogil:
-            rc = barecat_read(&self.ctx, path_c, &buf, &size)
+        rc = barecat_read(&self.ctx, path_c, &buf, &size)
 
         if rc == -errno.ENOENT:
             raise FileNotFoundError(f"File '{path}' was not found in Barecat.")
@@ -98,8 +97,7 @@ cdef class BarecatCython:
 
     def close(self):
         if self.is_initialized:
-            with nogil:
-                barecat_destroy(&self.ctx)
+            barecat_destroy(&self.ctx)
             self.is_initialized = False
 
     def __dealloc__(self):
@@ -155,8 +153,7 @@ cdef class BarecatMmapCython:
         cdef size_t size
         cdef int rc
         cdef const char * path_c = path_b
-        with nogil:
-            rc = barecat_mmap_read(&self.ctx, path_c, &buf, &size)
+        rc = barecat_mmap_read(&self.ctx, path_c, &buf, &size)
 
         if rc == -errno.ENOENT:
             raise FileNotFoundError(f"File '{path}' was not found in Barecat.")
@@ -177,8 +174,7 @@ cdef class BarecatMmapCython:
 
         cdef void *buf
         cdef int rc
-        with nogil:
-            rc = barecat_mmap_read_from_address(&self.ctx, shard, offset, size, &buf)
+        rc = barecat_mmap_read_from_address(&self.ctx, shard, offset, size, &buf)
 
         if rc != 0:
             raise RuntimeError(
@@ -192,8 +188,7 @@ cdef class BarecatMmapCython:
 
         cdef uint32_t crc
         cdef int rc
-        with nogil:
-            rc = barecat_mmap_crc32c_from_address(&self.ctx, shard, offset, size, &crc)
+        rc = barecat_mmap_crc32c_from_address(&self.ctx, shard, offset, size, &crc)
 
         if rc != 0:
             raise RuntimeError(
@@ -203,8 +198,7 @@ cdef class BarecatMmapCython:
 
     def close(self):
         if self.is_initialized:
-            with nogil:
-                barecat_mmap_destroy(&self.ctx)
+            barecat_mmap_destroy(&self.ctx)
             self.is_initialized = False
 
     def __dealloc__(self):

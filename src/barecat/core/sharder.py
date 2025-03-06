@@ -2,8 +2,9 @@ import glob
 import os
 import os.path as osp
 import shutil
-import crc32c as crc32c_lib
+from contextlib import AbstractContextManager
 
+import crc32c as crc32c_lib
 from barecat.common import FileSection
 from barecat.util import (
     copyfileobj,
@@ -15,7 +16,7 @@ from barecat.util import (
 )
 
 
-class Sharder:
+class Sharder(AbstractContextManager):
     def __init__(
         self,
         path,
@@ -85,11 +86,11 @@ class Sharder:
 
     @raise_if_readonly
     def reopen_current_shard(self, mode):
-        return self.reopen_shard(len(self.shard_files) - 1, mode)
+        return self.reopen_shard(self.num_shards - 1, mode)
 
     @raise_if_readonly
     def reopen_shard(self, shard_number, mode):
-        if mode != 'rb' and shard_number != len(self.shard_files) - 1:
+        if mode != 'rb' and shard_number != self.num_shards - 1:
             self.raise_if_append_only(
                 'Cannot change mode of non-last shard in an append-only Barecat'
             )
@@ -98,8 +99,8 @@ class Sharder:
 
     @raise_if_readonly
     def reopen_shards(self):
-        for i in range(len(self.shard_files)):
-            if i == len(self.shard_files) - 1:
+        for i in range(self.num_shards):
+            if i == self.num_shards - 1:
                 mode = self.shard_mode_last_existing
             else:
                 mode = self.shard_mode_nonlast
@@ -108,9 +109,7 @@ class Sharder:
     @raise_if_readonly
     def start_new_shard(self):
         self.reopen_current_shard(self.shard_mode_nonlast)
-        new_shard_file = open_(
-            f'{self.path}-shard-{len(self.shard_files):05d}', self.shard_mode_new
-        )
+        new_shard_file = open_(f'{self.path}-shard-{self.num_shards:05d}', self.shard_mode_new)
         self.shard_files.append(new_shard_file)
         return new_shard_file
 
@@ -119,9 +118,7 @@ class Sharder:
         self.raise_if_readonly('Cannot add to a read-only Barecat')
 
         old_shard_file = self.reopen_current_shard('r+b')
-        new_shard_file = open_(
-            f'{self.path}-shard-{len(self.shard_files):05d}', self.shard_mode_new
-        )
+        new_shard_file = open_(f'{self.path}-shard-{self.num_shards:05d}', self.shard_mode_new)
         old_shard_file.seek(offset)
         copyfileobj(old_shard_file, new_shard_file, size)
         old_shard_file.truncate(offset)
@@ -157,7 +154,7 @@ class Sharder:
 
         if shard is None:
             shard_file = self.shard_files[-1]
-            shard = len(self.shard_files) - 1
+            shard = self.num_shards - 1
             offset = shard_file.seek(0, os.SEEK_END)
         else:
             self.ensure_open_shards(shard)
@@ -174,9 +171,13 @@ class Sharder:
                     raise ValueError(f'File does not fit in the shard')
                 shard_file = self.start_new_shard()
                 offset_real = 0
-                shard_real = len(self.shard_files) - 1
+                shard_real = self.num_shards - 1
 
         if data is not None:
+            if not isinstance(data, (bytes, bytearray, memoryview)):
+                raise ValueError(
+                    'Data must be bytes, bytearray or memoryview. Are you using auto_codec/register_codec wrong?'
+                )
             shard_file.write(data)
             crc32c = crc32c_lib.crc32c(data)
             size_real = len(data)
@@ -187,10 +188,11 @@ class Sharder:
 
         if offset_real + size_real > self.shard_size_limit:
             if raise_if_cannot_fit:
+
                 raise ValueError('File does not fit in the shard')
             self.start_new_shard_and_transfer_last_file(offset_real, size_real)
             offset_real = 0
-            shard_real = len(self.shard_files) - 1
+            shard_real = self.num_shards - 1
 
         return shard_real, offset_real, size_real, crc32c
 
@@ -207,36 +209,11 @@ class Sharder:
         shard_file.seek(offset)
         write_zeroes(shard_file, size)
         shard_file.flush()
-        return len(self.shard_files) - 1, offset
-
-    @property
-    def total_physical_size_seek(self):
-        return sum(self.physical_shard_end(i) for i in range(len(self.shard_files)))
-
-    @property
-    def total_physical_size_stat(self):
-        return sum(osp.getsize(f.name) for f in self.shard_files)
-
-    def physical_shard_end(self, shard_number):
-        return self.shard_files[shard_number].seek(0, os.SEEK_END)
-
-    # THREADSAFE
-    @property
-    def shard_files(self):
-        if self.local is None:
-            if self._shard_files is None:
-                self._shard_files = self.open_shard_files()
-            return self._shard_files
-        try:
-            return self.local.shard_files
-        except AttributeError:
-            self.local.shard_files = self.open_shard_files()
-            return self.local.shard_files
+        return self.num_shards - 1, offset
 
     def ensure_open_shards(self, shard_id):
-        num_current_shards = len(self.shard_files)
-        if num_current_shards < shard_id + 1:
-            for i in range(num_current_shards, shard_id + 1):
+        if self.num_shards < shard_id + 1:
+            for i in range(self.num_shards, shard_id + 1):
                 self.shard_files.append(
                     open_(f'{self.path}-shard-{i:05d}', mode=self.shard_mode_nonlast)
                 )
@@ -266,7 +243,7 @@ class Sharder:
 
     def truncate_all_to_logical_size(self, logical_shard_ends):
         shard_files = self.shard_files
-        for i in range(len(shard_files) - 1, 0, -1):
+        for i in range(self.num_shards - 1, 0, -1):
             if logical_shard_ends[i] == 0:
                 shard_files[i].truncate(0)
                 shard_files[i].close()
@@ -282,12 +259,6 @@ class Sharder:
         for f in self.shard_files:
             f.close()
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-
     def raise_if_readonly(self, message):
         if self.readonly:
             raise ValueError(message)
@@ -295,3 +266,34 @@ class Sharder:
     def raise_if_append_only(self, message):
         if self.append_only:
             raise ValueError(message)
+
+    def physical_shard_end(self, shard_number):
+        return self.shard_files[shard_number].seek(0, os.SEEK_END)
+
+    @property
+    def num_shards(self):
+        return len(self.shard_files)
+
+    @property
+    def total_physical_size_seek(self):
+        return sum(self.physical_shard_end(i) for i in range(self.num_shards))
+
+    @property
+    def total_physical_size_stat(self):
+        return sum(osp.getsize(f.name) for f in self.shard_files)
+
+    # THREADSAFE
+    @property
+    def shard_files(self):
+        if self.local is None:
+            if self._shard_files is None:
+                self._shard_files = self.open_shard_files()
+            return self._shard_files
+        try:
+            return self.local.shard_files
+        except AttributeError:
+            self.local.shard_files = self.open_shard_files()
+            return self.local.shard_files
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
