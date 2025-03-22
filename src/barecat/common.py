@@ -15,6 +15,8 @@ class BarecatEntryInfo:
     """
     Base class for file and directory information classes.
 
+    The two subclasses are :class:`barecat.BarecatFileInfo` and :class:`barecat.BarecatDirInfo`.
+
     Args:
         path: path to the file or directory
         mode: file mode, i.e. permissions
@@ -35,9 +37,17 @@ class BarecatEntryInfo:
     ):
         self._path = normalize_path(path)
         self.mode = mode
+        """File mode, i.e., permissions."""
+
         self.uid = uid
+        """User ID."""
+
         self.gid = gid
+        """Group ID."""
+
         self.mtime_ns = mtime_ns
+        """Last modification time in nanoseconds since the Unix epoch."""
+
         if isinstance(self.mtime_ns, datetime):
             self.mtime_ns = datetime_to_ns(self.mtime_ns)
 
@@ -86,10 +96,11 @@ class BarecatEntryInfo:
         # Raw construction without any of that property business or validation, just for speed
         instance = cls.__new__(cls)
         for field, value in zip(cursor.description, row):
-            if field[0] == 'path':
+            fieldname = field[0]
+            if fieldname == 'path':
                 instance._path = value
             else:
-                object.__setattr__(instance, field[0], value)
+                object.__setattr__(instance, fieldname, value)
         return instance
 
 
@@ -127,9 +138,16 @@ class BarecatFileInfo(BarecatEntryInfo):
     ):
         super().__init__(path, mode, uid, gid, mtime_ns)
         self.shard = shard
+        """Shard number where the file is located."""
+
         self.offset = offset
+        """Offset within the shard in bytes."""
+
         self.size = size
+        """Size of the file in bytes."""
+
         self.crc32c = crc32c
+        """CRC32C checksum of the file contents."""
 
     def asdict(self) -> dict:
         """Returns a dictionary representation of the file information.
@@ -200,9 +218,16 @@ class BarecatDirInfo(BarecatEntryInfo):
     ):
         super().__init__(path, mode, uid, gid, mtime_ns)
         self.num_subdirs = num_subdirs
+        """Number of immediate subdirectories in the directory."""
+
         self.num_files = num_files
+        """Number of immediate files in the directory."""
+
         self.size_tree = size_tree
+        """Total size of the directory's contents (recursively) in bytes."""
+
         self.num_files_tree = num_files_tree
+        """Total number of files in the directory and its subdirectories, recursively."""
 
     def asdict(self) -> dict:
         """Returns a dictionary representation of the directory information.
@@ -245,11 +270,20 @@ class Order(Flag):
     or descending. The default order is ANY, which is the order in which SQLite yields rows.
     """
 
-    ANY = auto()  #: Default order, as returned by SQLite
-    RANDOM = auto()  #: Randomized order
-    ADDRESS = auto()  #: Order by shard and offset position
-    PATH = auto()  #: Alphabetical order by path
-    DESC = auto()  #: Descending order
+    ANY = auto()
+    """Default order, as returned by SQLite"""
+
+    RANDOM = auto()
+    """Randomized order"""
+
+    ADDRESS = auto()
+    """Order by shard and offset position"""
+
+    PATH = auto()
+    """Alphabetical order by path"""
+
+    DESC = auto()
+    """Descending order"""
 
     def as_query_text(self) -> str:
         """Returns the SQL ORDER BY clause corresponding to the ordering specification."""
@@ -332,6 +366,7 @@ class FileSection(io.IOBase):
         return self.read()
 
     def readable(self):
+        """Always returns True, since the section is always readable."""
         return True
 
     def writable(self):
@@ -393,6 +428,7 @@ class FileSection(io.IOBase):
         return self.position - self.start
 
     def close(self):
+        """Close the file section, this is a no-op, since the real shard file is not closed."""
         pass
 
     @property

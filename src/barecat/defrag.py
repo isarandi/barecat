@@ -32,15 +32,15 @@ class BarecatDefragger:
                     f.shard,
                     0 AS offset,
                     MIN(f.offset) AS size
-                FROM files f, x
+                FROM files f
                 GROUP BY f.shard
             ),
             nonfirst_gaps AS (
                 SELECT 
                     f.shard,
                     (f.offset + f.size) AS offset,
-                    COALESCE(
-                        LEAD(f.offset, 1) OVER (PARTITION BY f.shard ORDER BY f.offset),
+                    coalesce(
+                        lead(f.offset, 1) OVER (PARTITION BY f.shard ORDER BY f.offset),
                         x.shard_size_limit
                     ) - (f.offset + f.size) AS size
                 FROM files f, x
@@ -50,7 +50,7 @@ class BarecatDefragger:
             FROM all_gaps
             WHERE size > 0
             ORDER BY shard, offset
-        """, dict(n_shard_files=len(self.shard_files)), rowcls=FragmentGap)
+        """, rowcls=FragmentGap)
 
         empty_shard_gaps = [
             FragmentGap(shard, 0, self.shard_size_limit)
@@ -166,6 +166,8 @@ class BarecatDefragger:
                 gap.size -= fi.size
                 gap.offset += fi.size
                 if gap.size == 0:
+                    # even though we are changing the list while in a for loop that is iterating
+                    # over it, this is safe because we are immediately returning in this iteration.
                     del gaps[i_gap]
                 return True
         return False

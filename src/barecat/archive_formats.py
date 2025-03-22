@@ -9,8 +9,7 @@ from barecat.progbar import progressbar
 
 
 def iter_archive(src_path):
-    tar_extensions = ['.tar', '.tar.gz', '.tar.bz2', '.tar.xz']
-    if any(src_path.endswith(ext) for ext in tar_extensions):
+    if src_path.endswith(('.tar', '.tar.gz', '.tar.bz2', '.tar.xz')):
         return iter_tarfile(src_path)
     elif src_path.endswith('.zip'):
         return iter_zipfile(src_path)
@@ -19,8 +18,7 @@ def iter_archive(src_path):
 
 
 def iter_archive_nocontent(src_path):
-    tar_extensions = ['.tar', '.tar.gz', '.tar.bz2', '.tar.xz']
-    if any(src_path.endswith(ext) for ext in tar_extensions):
+    if src_path.endswith(('.tar', '.tar.gz', '.tar.bz2', '.tar.xz')):
         return iter_tarfile_nocontent(src_path)
     elif src_path.endswith('.zip'):
         return iter_zipfile_nocontent(src_path)
@@ -133,9 +131,7 @@ def iter_tarfile_nocontent(path):
 
 
 def get_archive_writer(target_path):
-    tar_extensions = ['.tar', '.tar.gz', '.tar.bz2', '.tar.xz']
-
-    if any(target_path.endswith(ext) for ext in tar_extensions):
+    if target_path.endswith(('.tar', '.tar.gz', '.tar.bz2', '.tar.xz')):
         return TarWriter(target_path)
     elif target_path.endswith('.zip'):
         return ZipWriter(target_path)

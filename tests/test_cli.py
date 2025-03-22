@@ -58,7 +58,33 @@ def test_barecat_creation(temp_jpeg_dir):
         assert "dir1/subdir2/test2.jpg" in file_list, "Expected dir1/subdir2/test2.jpg in the archive"
         assert "dir2/test3.jpg" in file_list, "Expected dir2/test3.jpg in the archive"
         assert reader[
-                   "dir1/subdir1/test1.jpg"] == b"dummy data", "Expected dir1/subdir1/test1.jpg to contain 'dummy data'"
+                   "dir1/subdir1/test1.jpg"] == b"dummy data1", "Expected dir1/subdir1/test1.jpg to contain 'dummy data1'"
+        assert reader[
+                   "dir1/subdir2/test2.jpg"] == b"dummy data2", "Expected dir1/subdir2/test2.jpg to contain 'dummy data2'"
+        assert reader[
+                   "dir2/test3.jpg"] == b"dummy data3", "Expected dir2/test3.jpg to contain 'dummy data3'"
+        assert reader.sharder.num_shards == 2, "Expected 2 shards in the archive"
+
+    assert result.returncode == 0, f"Command failed: {result.stderr}"
+    assert (temp_jpeg_dir / "mydata.barecat-sqlite-index").exists(), "Output file was not created"
+
+def test_barecat_creation_workers(temp_jpeg_dir):
+    """
+    Runs `find` with `barecat-create` and verifies output.
+    """
+    output_file = temp_jpeg_dir / "mydata.barecat"
+    cmd = f"cd {temp_jpeg_dir}; find . -name '*.jpg' -print0 | sort | barecat-create --null --file={output_file} --overwrite --shard-size=22 --workers=8"
+
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+    with barecat.Barecat(output_file) as reader:
+        file_list = list(reader)
+        assert len(file_list) == 3, "Expected 3 files in the archive"
+        assert "dir1/subdir1/test1.jpg" in file_list, "Expected dir1/subdir1/test1.jpg in the archive"
+        assert "dir1/subdir2/test2.jpg" in file_list, "Expected dir1/subdir2/test2.jpg in the archive"
+        assert "dir2/test3.jpg" in file_list, "Expected dir2/test3.jpg in the archive"
+        assert reader[
+                   "dir1/subdir1/test1.jpg"] == b"dummy data1", "Expected dir1/subdir1/test1.jpg to contain 'dummy data1'"
         assert reader[
                    "dir1/subdir2/test2.jpg"] == b"dummy data2", "Expected dir1/subdir2/test2.jpg to contain 'dummy data2'"
         assert reader[
@@ -81,7 +107,7 @@ def test_extract_single(barecat_archive):
 
     result = subprocess.run(extract_cmd, capture_output=True)
 
-    assert result.stdout == b"dummy data", "Unexpected content in extracted file"
+    assert result.stdout == b"dummy data1", "Unexpected content in extracted file"
     assert result.returncode == 0, f"Command failed: {result.stderr}"
 
 
@@ -148,5 +174,5 @@ def test_index_to_csv(barecat_archive):
 
     result = subprocess.run(csv_cmd, capture_output=True, text=True)
 
-    assert "path,shard,offset,size,crc32c" in result.stdout, "CSV output missing expected header"
+    assert '"path","shard","offset","size","crc32c"' in result.stdout, "CSV output missing expected header"
     assert result.returncode == 0, f"Command failed: {result.stderr}"

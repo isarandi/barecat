@@ -1710,9 +1710,10 @@ class Index(AbstractContextManager):
         """Exit the context manager."""
         self.close()
 
-    def __del__(self):
-        """Commit when the object is deleted."""
-        self.close()
+    # This can cause issues when multi-threading
+    # def __del__(self):
+    #     """Commit when the object is deleted."""
+    #     self.close()
 
 
 class Fetcher:

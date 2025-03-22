@@ -1,6 +1,8 @@
 API Reference
 =============
 
+Start at :class:`barecat.Barecat` to explore the API.
+
 .. toctree::
    :titlesonly:
 

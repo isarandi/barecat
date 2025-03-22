@@ -1,25 +1,58 @@
 [build-system]
-requires = ["setuptools>=42", "wheel", "cython>=3.0.0", "numpy"]
+requires = [
+    "setuptools>=64",
+    "wheel",
+    "cython>=3.0.0",
+    "numpy",
+    "setuptools_scm[toml]>=8"
+]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "barecat"
-version = "0.2.4"
-description = """
-Efficient dataset storage format through barebones concatenation of binary files
-and an SQLite index. Optimized for fast random access in machine learning workloads.
-"""
-authors = [
-    { name = "István Sárándi", email = "istvan.sarandi@gmail.com" }
-]
+dynamic = ["version"]
+description = "Scalable archive format for storing millions of small files with random access and SQLite indexing."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
+
+authors = [
+    { name = "István Sárándi", email = "istvan.sarandi@gmail.com" }
+]
 
 dependencies = [
     "multiprocessing-utils",
     "tqdm",
     "crc32c"
+]
+
+keywords = [
+    "sqlite",
+    "dataset",
+    "storage",
+    "archive",
+    "random-access",
+    "image-dataset",
+    "filesystem",
+    "key-value-store",
+    "deep-learning",
+    "data-loader",
+    "file-indexing"
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Archiving",
+    "Topic :: System :: Filesystems",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Cython",
+    "Operating System :: POSIX :: Linux"
 ]
 
 [project.scripts]
@@ -37,6 +70,18 @@ barecat-defrag = "barecat.cli:defrag"
 barecat-create-recursive = "barecat.cli:create_recursive"
 barecat-viewer = "barecat.viewerqt6:main"
 barecat-upgrade-database = "barecat.upgrade_database:main"
+
+[project.urls]
+Homepage = "https://github.com/isarandi/barecat"
+Documentation = "https://istvansarandi.com/docs/barecat/api/barecat/Barecat.html"
+Repository = "https://github.com/isarandi/barecat"
+Issues = "https://github.com/isarandi/barecat/issues"
+Author = "https://istvansarandi.com"
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+write_to = "src/barecat/_version.py"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

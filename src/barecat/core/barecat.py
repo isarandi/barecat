@@ -364,7 +364,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
     def walk(self, path: str) -> Iterator[tuple[str, list[str], list[str]]]:
         """Recursively list all files and directories in the tree starting from a directory.
 
-        This is analogous to Python's ``os.walk``.
+        This is analogous to Python's :py:func:`os.walk`.
 
         Args:
             path: Path to the directory within the archive.
@@ -388,14 +388,13 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         return self.index.walk_names(path)
 
     def scandir(self, path: str) -> Iterator[BarecatEntryInfo]:
-        """Iterate over all files and sub directories, as BarecatFileInfo or BarecatDirInfo
-        objects.
+        """Iterate over all immediate files and subdirectories of the given directory, as :class:`barecat.BarecatEntryInfo` objects.
 
         Args:
             path: Path to the directory within the archive.
 
         Returns:
-            An iterator over BarecatFileInfo or BarecatDirInfo objects.
+            An iterator over members of the directory, as :class:`barecat.BarecatEntryInfo` objects.
         """
         return self.index.iterdir_infos(path)
 

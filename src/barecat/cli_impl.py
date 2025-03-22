@@ -93,34 +93,36 @@ def create_with_workers(
     if overwrite and barecat.util.exists(target_path):
         barecat.util.remove(target_path)
 
-    with Sharder(
-        target_path,
-        shard_size_limit=shard_size_limit,
-        readonly=False,
-        append_only=False,
-        threadsafe=True,
-        allow_writing_symlinked_shard=False,
-    ) as sharder:
-        with ConsumedThreadPool(
+    with (
+        Sharder(
+            target_path,
+            shard_size_limit=shard_size_limit,
+            readonly=False,
+            append_only=False,
+            threadsafe=True,
+            allow_writing_symlinked_shard=False,
+        ) as sharder,
+        ConsumedThreadPool(
             index_writer_main, main_args=(f'{target_path}-sqlite-index',), max_workers=workers
-        ) as ctp:
-            for filesys_path, store_path in filesys_and_store_path_pairs:
-                statresult = os.stat(filesys_path)
+        ) as ctp,
+    ):
+        for filesys_path, store_path in filesys_and_store_path_pairs:
+            statresult = os.stat(filesys_path)
 
-                if stat.S_ISDIR(statresult.st_mode):
-                    dinfo = BarecatDirInfo(path=store_path)
-                    dinfo.fill_from_statresult(statresult)
-                    ctp.submit(userdata=dinfo)
-                else:
-                    finfo = BarecatFileInfo(path=store_path)
-                    finfo.fill_from_statresult(statresult)
-                    finfo.shard, finfo.offset = sharder.reserve(finfo.size)
-                    ctp.submit(
-                        sharder.add_by_path,
-                        userdata=finfo,
-                        args=(filesys_path, finfo.shard, finfo.offset, finfo.size),
-                        kwargs=dict(raise_if_cannot_fit=True),
-                    )
+            if stat.S_ISDIR(statresult.st_mode):
+                dinfo = BarecatDirInfo(path=store_path)
+                dinfo.fill_from_statresult(statresult)
+                ctp.submit(userdata=dinfo)
+            else:
+                finfo = BarecatFileInfo(path=store_path)
+                finfo.fill_from_statresult(statresult)
+                finfo.shard, finfo.offset = sharder.reserve(finfo.size)
+                ctp.submit(
+                    sharder.add_by_path,
+                    userdata=finfo,
+                    args=(filesys_path, finfo.shard, finfo.offset, finfo.size),
+                    kwargs=dict(raise_if_cannot_fit=True),
+                )
 
 
 def index_writer_main(target_path, future_iter):
