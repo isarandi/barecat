@@ -2,7 +2,6 @@ import argparse
 import os.path
 
 import barecat
-import barecat.cython
 
 
 def main():

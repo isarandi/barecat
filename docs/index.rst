@@ -122,14 +122,12 @@ Image viewer
 Barecat comes with a simple image viewer that can be used to browse the contents of a Barecat
 archive.
 
-
-Sitemap
-=======
-
 .. code-block:: bash
 
    barecat-image-viewer mydata.barecat
 
+Sitemap
+-------
 
 .. toctree::
    :maxdepth: 3

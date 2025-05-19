@@ -3,7 +3,7 @@ import os.path
 import sqlite3
 
 import barecat
-import barecat.cython
+import barecat_cython
 from barecat.consumed_threadpool import ConsumedThreadPool
 from barecat.progbar import progressbar
 
@@ -57,7 +57,7 @@ def upgrade_schema(path: str):
 
 def update_crc32c(path_out: str, workers=8):
     with (
-        barecat.cython.BarecatMmapCython(path_out) as sh,
+        barecat_cython.BarecatMmapCython(path_out) as sh,
         barecat.Index(path_out + '-sqlite-index', readonly=False) as index,
     ):
         c = index.cursor
