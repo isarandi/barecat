@@ -245,7 +245,12 @@ def barecat2archive(src_path, target_path):
 
 def print_ncdu_json(path):
     timestamp = time.time()
-    print(f'[1,1,{{"progname":"barecat","progver":"0.1.2","timestamp":{timestamp}}},')
+    import importlib.metadata
+
+    progver = importlib.metadata.version('barecat')
+    progver = '.'.join(progver.split('.')[:3])
+
+    print(f'[1,1,{{"progname":"barecat","progver": {progver},"timestamp":{timestamp}}},')
     with barecat_.Index(path) as index_reader:
         _print_ncdu_json(index_reader, '')
     print(']')
@@ -255,15 +260,20 @@ def _print_ncdu_json(index_reader, dirpath):
     basename = '/' if dirpath == '' else osp.basename(dirpath)
 
     print('[', json.dumps(dict(name=basename, asize=4096, ino=0)), end='')
-    subdirs, files = index_reader.listdir_with_sizes_and_counts(dirpath)
-    if files:
+    infos = index_reader.listdir_infos(dirpath)
+    file_infos = [f for f in infos if isinstance(f, BarecatFileInfo)]
+    subdir_infos = [d for d in infos if isinstance(d, BarecatDirInfo)]
+    del infos
+
+    if file_infos:
         filedump = json.dumps(
-            [dict(name=osp.basename(file), asize=size, dsize=size, ino=0) for file, size in files]
+            [dict(name=osp.basename(fi.path), asize=fi.size, dsize=fi.size, ino=0) for fi in file_infos]
         )
         print(',', filedump[1:-1], end='')
-    del files
-    for subdir, _, _ in subdirs:
+    del file_infos
+
+    for subdir in subdir_infos:
         print(',')
-        _print_ncdu_json(index_reader, osp.join(dirpath, subdir))
+        _print_ncdu_json(index_reader, subdir.path)
 
     print(']', end='')
