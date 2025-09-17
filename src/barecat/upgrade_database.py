@@ -26,7 +26,7 @@ def main():
 
 
 def upgrade_schema(path: str):
-    with barecat.Index(path_out + '-sqlite-index', readonly=False) as index_out:
+    with barecat.Index(path + '-sqlite-index', readonly=False) as index_out:
         c = index_out.cursor
         c.execute('COMMIT')
         c.execute('PRAGMA foreign_keys=OFF')
@@ -100,7 +100,6 @@ def update_crc32c(path_out: str, workers=8):
 def temp_crc_writer_main(dbpath, future_iter):
     with sqlite3.connect(dbpath) as conn:
         c = conn.cursor()
-        c.execute('COMMIT')
         c.execute('PRAGMA synchronous=OFF')
         c.execute('PRAGMA journal_mode=OFF')
         c.execute("CREATE TABLE IF NOT EXISTS crc32c (path TEXT PRIMARY KEY, crc32c INTEGER)")
