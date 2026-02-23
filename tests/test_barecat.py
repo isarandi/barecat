@@ -35,7 +35,7 @@ def test_barecat():
         bc['some/path.txt'] = b'hello world'
 
     with barecat.Barecat(filepath, readonly=True) as bc:
-        with bc.open('some/path.txt') as f:
+        with bc.open('some/path.txt', 'rb') as f:
             f.seek(6)
             assert f.read() == b'world'
 
