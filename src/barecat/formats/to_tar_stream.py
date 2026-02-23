@@ -1,6 +1,6 @@
 import sys
-from barecat.archive_formats import TarWriter
-import barecat.core.barecat as barecat_
+from ..formats.archive_formats import TarWriter
+from ..core import barecat as barecat_
 import argparse
 import sys
 

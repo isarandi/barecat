@@ -54,6 +54,8 @@ class ConsumedThreadPool:
         self.consumer_error_queue = queue.Queue()
         self.consumer_main = consumer_main
 
+        if main_args is None:
+            main_args = ()
         if main_kwargs is None:
             main_kwargs = {}
         self.consumer_thread = threading.Thread(

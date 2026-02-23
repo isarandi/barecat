@@ -28,6 +28,9 @@ def progressbar(iterable=None, *args, **kwargs):
             def update(self, *a, **kw):
                 pass
 
+            def close(self):
+                pass
+
         return X()
     else:
         return iterable

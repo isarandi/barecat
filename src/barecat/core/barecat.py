@@ -1,29 +1,52 @@
-import bz2
+import io
 import os
 import os.path as osp
 import shutil
 import stat
+import warnings
 from collections.abc import Callable, Iterator, MutableMapping
 from contextlib import AbstractContextManager
 from typing import Any, Optional, TYPE_CHECKING, Union
 
-import barecat.progbar
-import barecat.util
+from ..io import codecs as barecat_codecs
+from ..util import progbar as barecat_progbar
+from ..util import misc as barecat_util
 import crc32c as crc32c_lib
-from barecat.core.sharder import Sharder
-from barecat.defrag import BarecatDefragger
-from barecat.exceptions import (
+from ..core.sharder import Sharder
+from ..io.fileobj import BarecatFileObjectHelper
+from ..maintenance.merge import BarecatMergeHelper
+from ..maintenance.defrag import BarecatDefragger
+from ..exceptions import (
     FileExistsBarecatError,
     FileNotFoundBarecatError,
     IsADirectoryBarecatError,
 )
-from barecat.util import copyfileobj, raise_if_readonly, raise_if_readonly_or_append_only
+from ..util.misc import raise_if_readonly, raise_if_readonly_or_append_only
+from ..util.threading import ThreadLocalStorage
+from ..io.copyfile import accumulate_crc32c
 
 if TYPE_CHECKING:
-    from barecat import BarecatDirInfo, BarecatFileInfo, BarecatEntryInfo, FileSection, Index
+    from barecat import (
+        BarecatDirInfo,
+        BarecatFileInfo,
+        BarecatEntryInfo,
+        Index,
+        BarecatReadWriteFileObject,
+        BarecatFileObject,
+    )
+    from .paths import resolve_index_path
 else:
-    from barecat.common import BarecatDirInfo, BarecatFileInfo, BarecatEntryInfo, FileSection
-    from barecat.core.index import Index, normalize_path
+    from .types import (
+        BarecatDirInfo,
+        BarecatFileInfo,
+        BarecatEntryInfo,
+    )
+    from ..io.fileobj import (
+        BarecatReadWriteFileObject,
+        BarecatFileObject,
+    )
+    from .index import Index, normalize_path
+    from .paths import resolve_index_path
 
 
 class Barecat(MutableMapping[str, Any], AbstractContextManager):
@@ -35,19 +58,19 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
 
     The ``Barecat`` object provides two main interfaces:
 
-    1. A dict-like interface, where keys are file paths and values are the file contents. The \
-         contents can be raw bytes, or automatically decoded based on the file extension, if \
-         ``auto_codec`` is set to ``True`` or codecs have been registered via \
-         :meth:`register_codec`.
+    1. A dict-like interface, where keys are file paths and values are the file contents as bytes.
+       For automatic encoding/decoding based on file extension, wrap with :class:`DecodedView`.
     2. A filesystem-like interface consisting of methods such as :meth:`open`, :meth:`exists`, \
         :meth:`listdir`, :meth:`walk`, :meth:`glob`, etc., modeled after Python's ``os`` module.
 
     Args:
-        path: Path to the Barecat archive, without the -sqlite-index or -shard-XXXXX suffixes.
-        shard_size_limit: Maximum size of each shard file. If None, the shard size is unlimited.
+        path: Path to the Barecat archive (e.g., 'archive.barecat'). Shards are stored
+            alongside as 'archive.barecat-shard-XXXXX'.
+        shard_size_limit: Maximum size of each shard file in bytes (int) or as a string like '1G'.
+            If None, the shard size is unlimited.
         readonly: If True, the Barecat archive is opened in read-only mode.
         overwrite: If True, the Barecat archive is first deleted if it already exists.
-        auto_codec: If True, automatically encode/decode files based on their extension.
+        auto_codec: **Deprecated.** Use :class:`DecodedView` instead. Will be removed in 1.0.
         exist_ok: If True, do not raise an error if the Barecat archive already exists.
         append_only: If True, only allow appending to the Barecat archive.
         threadsafe: If True, the Barecat archive is opened in thread-safe mode, where each thread
@@ -59,8 +82,8 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
 
     def __init__(
         self,
-        path: str,
-        shard_size_limit: Optional[int] = None,
+        path: Union[str, os.PathLike],
+        shard_size_limit: Union[int, str, None] = None,
         readonly: bool = True,
         overwrite: bool = False,
         auto_codec: bool = False,
@@ -68,16 +91,22 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         append_only: bool = False,
         threadsafe: bool = False,
         allow_writing_symlinked_shard: bool = False,
+        wal: bool = False,
+        readonly_is_immutable: bool = False,
     ):
+        path = os.fspath(path)
         if threadsafe and not readonly:
             raise ValueError('Threadsafe mode is only supported for readonly Barecat.')
 
-        if not readonly and barecat.util.exists(path):
+        if not readonly and barecat_util.exists(path):
             if not exist_ok:
                 raise FileExistsError(path)
             if overwrite:
                 print(f'Overwriting existing Barecat at {path}')
-                barecat.util.remove(path)
+                barecat_util.remove(path)
+
+        if readonly and not barecat_util.exists(path):
+            raise FileNotFoundError(path)
 
         self.path = path
         self.readonly = readonly
@@ -85,15 +114,11 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         self.auto_codec = auto_codec
         self.threadsafe = threadsafe
         self.allow_writing_symlinked_shard = allow_writing_symlinked_shard
+        self.readonly_is_immutable = readonly_is_immutable
+        self.wal = wal
 
         # Index
-        self._index = None
-        if threadsafe:
-            import multiprocessing_utils
-
-            self.local = multiprocessing_utils.local()
-        else:
-            self.local = None
+        self._index_storage = ThreadLocalStorage(threadsafe)
 
         if not readonly and shard_size_limit is not None:
             self.shard_size_limit = shard_size_limit
@@ -108,17 +133,16 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             allow_writing_symlinked_shard=allow_writing_symlinked_shard,
         )
 
-        self.codecs = {}
-        if auto_codec:
-            import barecat.codecs as bcc
+        self.codec_registry = barecat_codecs.CodecRegistry(auto_codec=auto_codec)
+        self._merge_helper = BarecatMergeHelper(self)
+        self._fileobj_helper = BarecatFileObjectHelper(self)
 
-            self.register_codec(['.jpg', '.jpeg'], bcc.encode_jpeg, bcc.decode_jpeg)
-            self.register_codec(['.msgpack'], bcc.encode_msgpack_np, bcc.decode_msgpack_np)
-            self.register_codec(['.npy'], bcc.encode_npy, bcc.decode_npy)
-            self.register_codec(['.npz'], bcc.encode_npz, bcc.decode_npz)
-            self.bz_compressor = bz2.BZ2Compressor(9)
-            self.register_codec(
-                ['.bz2'], self.bz_compressor.compress, bz2.decompress, nonfinal=True
+        if auto_codec:
+            warnings.warn(
+                "auto_codec is deprecated and will be removed in version 1.0. "
+                "Use DecodedView instead: dec = DecodedView(bc); dec['file.json'] = data",
+                DeprecationWarning,
+                stacklevel=2,
             )
 
     ## Dict-like API: keys are filepaths, values are the file contents (bytes or decoded objects)
@@ -154,7 +178,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         raw_data = self.sharder.read_from_address(
             row['shard'], row['offset'], row['size'], row['crc32c']
         )
-        return self.decode(path, raw_data)
+        return self.codec_registry.decode(path, raw_data)
 
     def get(self, path: str, default: Any = None) -> Union[bytes, Any]:
         """Get the contents of a file in the Barecat archive, with a default value if the file does
@@ -181,7 +205,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         """
         for finfo in self.index.iter_all_fileinfos():
             data = self.read(finfo)
-            yield finfo.path, self.decode(finfo.path, data)
+            yield finfo.path, self.codec_registry.decode(finfo.path, data)
 
     def keys(self) -> Iterator[str]:
         """Iterate over all file paths in the archive.
@@ -252,7 +276,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
 
         """
 
-        self.add(path, data=self.encode(path, content))
+        self.add(path, data=self.codec_registry.encode(path, content))
 
     def setdefault(self, key: str, default: Any = None, /):
         try:
@@ -285,37 +309,44 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         """
         try:
             self.remove(path)
-        except FileNotFoundBarecatError:
+        except (FileNotFoundBarecatError, IsADirectoryBarecatError):
             raise KeyError(path)
 
     # Filesystem-like API
-    # READING
-    def open(self, item: Union[BarecatFileInfo, str], mode='r') -> FileSection:
+    def open(
+        self,
+        item: Union[BarecatFileInfo, str],
+        mode: str = 'r',
+        encoding: Optional[str] = None,
+        errors: Optional[str] = None,
+        newline: Optional[str] = None,
+    ) -> Union[BarecatFileObject, io.TextIOWrapper]:
         """Open a file in the archive, as a file-like object.
 
         Args:
             item: Either a BarecatFileInfo object, or a path to a file within the archive.
-            mode: Mode to open the file in, for now only 'r' is supported.
+            mode: Mode to open the file in.
+                'r'/'rt'/'rb' - read only, file must exist
+                'r+'/'r+b' - read/write, file must exist
+                'w'/'wt'/'wb' - write, truncate if exists, create if not
+                'w+'/'w+b' - read/write, truncate if exists, create if not
+                'x'/'xb' - exclusive create, fail if exists
+                'x+'/'x+b' - exclusive create read/write, fail if exists
+                'a'/'ab' - append, create if not exists
+                'a+'/'a+b' - append read/write, create if not exists
+            encoding: Text encoding (only for text mode, default 'utf-8').
+            errors: Error handling for encoding (only for text mode).
+            newline: Newline handling (only for text mode).
 
         Returns:
-            File-like object representing the file.
+            File-like object representing the file. Returns TextIOWrapper for text
+            mode, BarecatFileObject for binary mode.
 
         Raises:
-            ValueError: If the mode is not 'r'.
-            FileNotFoundBarecatError: If a file with this path does not exist in the archive.
-
-        Examples:
-
-            >>> bc = Barecat('test.barecat', readonly=False)
-            >>> bc['file.txt'] = b'Hello, world!'
-            >>> with bc.open('file.txt') as f:
-            ...     f.seek(8)
-            ...     print(f.read())
-            b'world!'
-
+            FileNotFoundBarecatError: If file doesn't exist and mode requires it.
+            FileExistsBarecatError: If file exists and mode is exclusive create.
         """
-        finfo = self.index._as_fileinfo(item)
-        return self.sharder.open_from_address(finfo.shard, finfo.offset, finfo.size, mode)
+        return self._fileobj_helper.open(item, mode, encoding, errors, newline)
 
     def exists(self, path: str) -> bool:
         """Check if a file or directory exists in the archive.
@@ -626,8 +657,11 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         fileobj=None,
         bufsize: int = shutil.COPY_BUFSIZE,
         dir_exist_ok: bool = False,
+        file_exist_ok: bool = False,
     ):
         """Add a file or directory to the archive.
+
+        Parent directories are automatically created if they don't exist (like ``mkdir -p``).
 
         Args:
             item: BarecatFileInfo or BarecatDirInfo object to add or a target path for a file.
@@ -636,11 +670,15 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             bufsize: Buffer size to use when reading from the file object.
             dir_exist_ok: If True, do not raise an error when adding a directory and that
                 directory already exists in the archive (as a directory).
+            file_exist_ok: If True, skip adding a file if a file with the same path already
+                exists in the archive. This is useful for merge operations.
 
         Raises:
             ValueError: If the file is larger than the shard size limit.
             FileExistsBarecatError: If a file or directory with the same path already exists in the
-                archive, unless ``dir_exist_ok`` is True and the item is a directory.
+                archive, unless ``dir_exist_ok`` is True and the item is a directory, or
+                ``file_exist_ok`` is True and the item is a file.
+            NotADirectoryBarecatError: If a parent path exists as a file.
 
         Examples:
             >>> bc = Barecat('test.barecat', readonly=False)
@@ -652,6 +690,11 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             return
 
         finfo = BarecatFileInfo(path=item) if isinstance(item, str) else item
+
+        # Check if file exists before writing data (to avoid wasted writes)
+        if file_exist_ok and finfo.path in self:
+            return
+
         finfo.shard, finfo.offset, finfo.size, finfo.crc32c = self.sharder.add(
             size=finfo.size, data=data, fileobj=fileobj, bufsize=bufsize
         )
@@ -664,6 +707,112 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             with open(shard_file.name, 'r+b') as f:
                 f.truncate(finfo.offset)
             raise
+
+    @raise_if_readonly_or_append_only
+    def update_file(
+        self,
+        old_item: Union[BarecatFileInfo, str],
+        new_item: Union[BarecatFileInfo, str, None] = None,
+        *,
+        data: Optional[bytes] = None,
+        fileobj=None,
+        size: Optional[int] = None,
+        bufsize: int = shutil.COPY_BUFSIZE,
+    ):
+        """Update an existing file's data and/or metadata, reusing space if new data fits.
+
+        If new data is smaller or equal to old data, writes in-place at the
+        existing location, avoiding fragmentation. If new data is larger,
+        writes at a new location (old location becomes a gap).
+
+        Args:
+            old_item: The existing file to update. Either a BarecatFileInfo (if user
+                      already looked it up) or a path string.
+            new_item: Optional new metadata. If BarecatFileInfo, its metadata fields
+                      (path, mtime_ns, mode, uid, gid) are the new values. If string,
+                      it's the new path (rename). If None, only data is updated.
+            data: New file content. Either data or fileobj must be provided.
+            fileobj: File-like object to read new data from.
+            size: Size of new data. Required for fileobj if writing in-place.
+            bufsize: Buffer size for reading from fileobj.
+
+        Raises:
+            FileNotFoundBarecatError: If file does not exist.
+            ValueError: If neither data nor fileobj provided, or both provided.
+        """
+
+        old_info = self.index._as_fileinfo(old_item)
+
+        # Extract new metadata from new_item
+        if isinstance(new_item, BarecatFileInfo):
+            new_mtime_ns = new_item.mtime_ns
+            new_mode = new_item.mode
+            new_uid = new_item.uid
+            new_gid = new_item.gid
+        else:
+            new_mtime_ns = None
+            new_mode = None
+            new_uid = None
+            new_gid = None
+
+        if data is not None:
+            size = len(data)
+
+        if size is not None and size <= old_info.size:
+            # Fits in existing space - write in-place
+            shard, offset, size, crc32c = self.sharder.add(
+                shard=old_info.shard,
+                offset=old_info.offset,
+                size=size,
+                data=data,
+                fileobj=fileobj,
+                bufsize=bufsize,
+                raise_if_cannot_fit=True,
+            )
+            self.index.update_file(
+                old_info.path,
+                new_size=size,
+                new_crc32c=crc32c,
+                new_mtime_ns=new_mtime_ns,
+                new_mode=new_mode,
+                new_uid=new_uid,
+                new_gid=new_gid,
+            )
+        else:
+            # Doesn't fit or unknown size - allocate new space, then update index
+            shard, offset, size, crc32c = self.sharder.add(
+                data=data, fileobj=fileobj, size=size, bufsize=bufsize
+            )
+            self.index.update_file(
+                old_info.path,
+                new_shard=shard,
+                new_offset=offset,
+                new_size=size,
+                new_crc32c=crc32c,
+                new_mtime_ns=new_mtime_ns,
+                new_mode=new_mode,
+                new_uid=new_uid,
+                new_gid=new_gid,
+            )
+
+    # DIRECTORY CREATION
+    @raise_if_readonly
+    def mkdir(self, path: str, mode: int = 0o755, exist_ok: bool = False):
+        """Create a directory in the archive.
+
+        Parent directories are automatically created if they don't exist (like ``mkdir -p``).
+
+        Args:
+            path: Path of the directory to create.
+            mode: Permission mode for the directory (default: 0o755).
+            exist_ok: If True, do not raise an error if the directory already exists.
+
+        Raises:
+            FileExistsBarecatError: If a file or directory with this path already exists,
+                unless exist_ok is True and it's a directory.
+            NotADirectoryBarecatError: If the path or a parent exists as a file.
+        """
+        self.add(BarecatDirInfo(path=path, mode=mode), dir_exist_ok=exist_ok)
 
     # DELETION
     @raise_if_readonly_or_append_only
@@ -714,7 +863,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         self.index.remove_empty_dir(item)
 
     @raise_if_readonly_or_append_only
-    def remove_recursively(self, item: Union[BarecatDirInfo, str]):
+    def rmtree(self, item: Union[BarecatDirInfo, str]):
         """Remove (delete) a directory and all its contents recursively from the archive.
 
         Technically, file contents are not erased from the shard file at this point, only the
@@ -776,154 +925,31 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
 
     # MERGING
     @raise_if_readonly
-    def merge_from_other_barecat(self, source_path: str, ignore_duplicates: bool = False):
+    def merge_from_other_barecat(
+        self,
+        source_path: str,
+        ignore_duplicates: bool = False,
+        prefix: str = '',
+        pattern: str = None,
+        filter_rules: list = None,
+    ):
         """Merge the contents of another Barecat archive into this one.
 
         Args:
             source_path: Path to the other Barecat archive.
             ignore_duplicates: If True, do not raise an error when a file with the same path already
                 exists in the archive.
+            prefix: Path prefix to prepend to all paths (default: '', no prefix).
+            pattern: Glob pattern to filter files (uses optimized iterglob_infos).
+            filter_rules: Rsync-style include/exclude rules as list of ('+'/'-', pattern) tuples.
 
         Raises:
             ValueError: If the shard size limit is set and a file in the source archive is larger
                 than the shard size limit.
         """
-        out_shard_number = len(self.sharder.shard_files) - 1
-        out_shard = self.sharder.shard_files[-1]
-        out_shard_offset = out_shard.tell()
-
-        source_index_path = f'{source_path}-sqlite-index'
-        self.index.cursor.execute(
-            f"ATTACH DATABASE 'file:{source_index_path}?mode=ro' AS sourcedb"
+        self._merge_helper.merge_from_other_barecat(
+            source_path, ignore_duplicates, prefix, pattern, filter_rules
         )
-
-        if self.shard_size_limit is not None:
-            in_max_size = self.index.fetch_one("SELECT MAX(size) FROM sourcedb.files")[0]
-            if in_max_size > self.shard_size_limit:
-                self.index.cursor.execute("DETACH DATABASE sourcedb")
-                raise ValueError('Files in the source archive are larger than the shard size')
-
-        with self.index.no_triggers():
-            # Upsert all directories
-            self.index.cursor.execute(
-                """
-                INSERT INTO dirs (
-                    path, num_subdirs, num_files, size_tree, num_files_tree,
-                    mode, uid, gid, mtime_ns)
-                SELECT path, num_subdirs, num_files, size_tree, num_files_tree,
-                    mode, uid, gid, mtime_ns
-                FROM sourcedb.dirs WHERE true
-                ON CONFLICT (dirs.path) DO UPDATE SET
-                    num_subdirs = num_subdirs + excluded.num_subdirs,
-                    num_files = num_files + excluded.num_files,
-                    size_tree = size_tree + excluded.size_tree,
-                    num_files_tree = num_files_tree + excluded.num_files_tree,
-                    mode = coalesce(
-                        dirs.mode | excluded.mode,
-                        coalesce(dirs.mode, 0) | excluded.mode,
-                        dirs.mode | coalesce(excluded.mode, 0)),
-                    uid = coalesce(excluded.uid, dirs.uid),
-                    gid = coalesce(excluded.gid, dirs.gid),
-                    mtime_ns = coalesce(
-                        max(dirs.mtime_ns, excluded.mtime_ns),
-                        max(coalesce(dirs.mtime_ns, 0), excluded.mtime_ns),
-                        max(dirs.mtime_ns, coalesce(excluded.mtime_ns, 0)))
-                """
-            )
-
-            in_shard_number = 0
-            in_shard_path = f'{source_path}-shard-{in_shard_number:05d}'
-            in_shard = open(in_shard_path, 'rb')
-            in_shard_offset = 0
-            in_shard_end = self.index.fetch_one(
-                """
-                SELECT MAX(offset + size) FROM sourcedb.files WHERE shard=?
-                """,
-                (in_shard_number,),
-            )[0]
-
-            while True:
-                if self.shard_size_limit is not None:
-                    out_shard_space_left = self.shard_size_limit - out_shard_offset
-                    # check how much of the in_shard we can put in the current out_shard
-                    fetched = self.index.fetch_one(
-                        """
-                        SELECT MAX(offset + size) - :in_shard_offset AS max_offset_size_adjusted
-                        FROM sourcedb.files
-                        WHERE offset + size <= :in_shard_offset + :out_shard_space_left
-                        AND shard = :in_shard_number""",
-                        dict(
-                            in_shard_offset=in_shard_offset,
-                            out_shard_space_left=out_shard_space_left,
-                            in_shard_number=in_shard_number,
-                        ),
-                    )
-                    if fetched is None:
-                        # No file of the current in_shard fits in the current out_shard, must start a
-                        # new one
-                        self.sharder.start_new_shard()
-                        out_shard_number += 1
-                        out_shard_offset = 0
-                        continue
-
-                    max_copiable_amount = fetched[0]
-                else:
-                    max_copiable_amount = None
-
-                # now we need to update the index, but we need to update the offset and shard
-                # of the files that we copied
-                maybe_ignore = 'OR IGNORE' if ignore_duplicates else ''
-                self.index.cursor.execute(
-                    f"""
-                    INSERT {maybe_ignore} INTO files (
-                        path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
-                    SELECT path, :out_shard_number, offset + :out_minus_in_shard_offset,
-                        size, crc32c, mode, uid, gid, mtime_ns 
-                    FROM sourcedb.files
-                    WHERE offset >= :in_shard_offset AND shard = :in_shard_number"""
-                    + (
-                        """
-                    AND offset + size <= :in_shard_offset + :max_copiable_amount
-                    """
-                        if max_copiable_amount is not None
-                        else ""
-                    ),
-                    dict(
-                        out_shard_number=out_shard_number,
-                        in_shard_offset=in_shard_offset,
-                        out_minus_in_shard_offset=out_shard_offset - in_shard_offset,
-                        in_shard_number=in_shard_number,
-                        max_copiable_amount=max_copiable_amount,
-                    ),
-                )
-                copyfileobj(in_shard, out_shard, max_copiable_amount)
-                out_shard_offset = out_shard.tell()
-                in_shard_offset = in_shard.tell()
-                if in_shard_offset == in_shard_end:
-                    # we finished this in_shard, move to the next one
-                    in_shard.close()
-                    in_shard_number += 1
-                    in_shard_path = f'{source_path}-shard-{in_shard_number:05d}'
-                    try:
-                        in_shard = open(in_shard_path, 'rb')
-                    except FileNotFoundError:
-                        # done with all in_shards of this source
-                        break
-                    in_shard_offset = 0
-                    in_shard_end = self.index.fetch_one(
-                        """
-                        SELECT MAX(offset + size) FROM sourcedb.files WHERE shard=?
-                        """,
-                        (in_shard_number,),
-                    )[0]
-
-            in_shard.close()
-            self.index.conn.commit()
-            self.index.cursor.execute("DETACH DATABASE sourcedb")
-
-            if ignore_duplicates:
-                self.index.update_treestats()
-                self.index.conn.commit()
 
     @property
     def shard_size_limit(self) -> int:
@@ -931,8 +957,12 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         return self.index.shard_size_limit
 
     @shard_size_limit.setter
-    def shard_size_limit(self, value: int):
-        """Set the maximum size of each shard file."""
+    def shard_size_limit(self, value: Union[int, str]):
+        """Set the maximum size of each shard file.
+
+        Args:
+            value: Size in bytes (int) or as a string like '1G', '500M', '100K'.
+        """
         self.index.shard_size_limit = value
 
     def logical_shard_end(self, shard_number: int) -> int:
@@ -968,18 +998,18 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             raise ValueError(message)
 
     # THREADSAFE
+    def _make_index(self):
+        return Index(
+            resolve_index_path(self.path),
+            readonly=self.readonly,
+            wal=self.wal,
+            readonly_is_immutable=self.readonly_is_immutable,
+        )
+
     @property
     def index(self) -> Index:
         """Index object to manipulate the metadata database of the Barecat archive."""
-        if not self.local:
-            if self._index is None:
-                self._index = Index(f'{self.path}-sqlite-index', readonly=self.readonly)
-            return self._index
-        try:
-            return self.local.index
-        except AttributeError:
-            self.local.index = Index(f'{self.path}-sqlite-index', readonly=self.readonly)
-            return self.local.index
+        return self._index_storage.get(self._make_index)
 
     # CONSISTENCY CHECKS
     def check_crc32c(self, item: Union[BarecatFileInfo, str]):
@@ -998,7 +1028,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
 
         finfo = self.index._as_fileinfo(item)
         with self.open(finfo, 'rb') as f:
-            crc32c = barecat.util.fileobj_crc32c_until_end(f)
+            crc32c = accumulate_crc32c(f)
         if finfo.crc32c is not None and crc32c != finfo.crc32c:
             print(f"CRC32C mismatch for {finfo.path}. Expected {finfo.crc32c}, got {crc32c}")
             return False
@@ -1026,7 +1056,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
                 pass  # no files
         else:
             n_printed = 0
-            for fi in barecat.progbar.progressbar(
+            for fi in barecat_progbar.progressbar(
                 self.index.iter_all_fileinfos(), total=self.num_files
             ):
                 if not self.check_crc32c(fi):
@@ -1057,11 +1087,21 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         If ``auto_codec`` was True in the constructor, then the codecs are already
         registered by default for the following extensions:
 
-        - ``'.msgpack'``
-        - ``'.jpg'``, ``'.jpeg'``
-        - ``'.pkl'``
-        - ``'.npy'``
-        - ``'.npz'``
+        **Data formats:**
+        - ``.json`` — dict/list (stdlib json)
+        - ``.pkl``, ``.pickle`` — any object (pickle)
+        - ``.npy`` — numpy array
+        - ``.npz`` — dict of numpy arrays
+        - ``.msgpack`` — any object (requires msgpack-numpy)
+
+        **Image formats** (uses cv2 > PIL > imageio, whichever is available):
+        - ``.jpg``, ``.jpeg``, ``.png``, ``.bmp``, ``.gif``
+        - ``.tiff``, ``.tif``, ``.webp``, ``.exr``
+
+        **Compression** (stackable with other codecs):
+        - ``.gz``, ``.gzip`` — gzip
+        - ``.xz``, ``.lzma`` — lzma
+        - ``.bz2`` — bzip2
 
 
         Args:
@@ -1107,36 +1147,13 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             >>> bc = Barecat('test.barecat', readonly=False)
             >>> bc.register_codec(['.pkl'], pickle.dumps, pickle.loads)
         """
-
-        for ext in exts:
-            self.codecs[ext] = (encoder, decoder, nonfinal)
-
-    def encode(self, path, data):
-        if not self.codecs:
-            return data
-
-        noext, ext = osp.splitext(path)
-        try:
-            encoder, decoder, nonfinal = self.codecs[ext.lower()]
-        except KeyError:
-            return data
-        else:
-            if nonfinal:
-                data = self.encode(noext, data)
-            return encoder(data)
-
-    def decode(self, path, data):
-        if not self.codecs:
-            return data
-        noext, ext = osp.splitext(path)
-        try:
-            encoder, decoder, nonfinal = self.codecs[ext.lower()]
-            data = decoder(data)
-            if nonfinal:
-                data = self.decode(noext, data)
-            return data
-        except KeyError:
-            return data
+        warnings.warn(
+            "register_codec is deprecated and will be removed in version 1.0. "
+            "Use DecodedView instead: dec = DecodedView(bc); dec.register_codec(...)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.codec_registry.register_codec(exts, encoder, decoder, nonfinal)
 
     # PICKLING
     def __reduce__(self):
@@ -1155,7 +1172,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
 
     def truncate_all_to_logical_size(self):
         logical_shard_ends = [
-            self.index.logical_shard_end(i) for i in range(len(self.sharder.shard_files))
+            self.index.logical_shard_end(i) for i in range(self.sharder.num_shards)
         ]
         self.sharder.truncate_all_to_logical_size(logical_shard_ends)
 
@@ -1174,8 +1191,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
 
     def close(self):
         """Close the Barecat archive."""
-
-        self.index.close()
+        self._index_storage.close()
         self.sharder.close()
 
     def __exit__(self, exc_type, exc_val, exc_tb):

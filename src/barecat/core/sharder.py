@@ -5,15 +5,12 @@ import shutil
 from contextlib import AbstractContextManager
 
 import crc32c as crc32c_lib
-from barecat.common import FileSection
-from barecat.util import (
-    copyfileobj,
-    copyfileobj_crc32c,
-    open_,
-    raise_if_readonly,
-    reopen,
-    write_zeroes,
-)
+from ..io.fileobj import BarecatReadOnlyFileObject, BarecatReadWriteFileObject
+from ..exceptions import FileTooLargeBarecatError
+from ..util.misc import raise_if_readonly
+from ..io.open import open_, reopen
+from ..io.copyfile import copy, copy_crc32c
+from ..util.threading import ThreadLocalStorage
 
 
 class Sharder(AbstractContextManager):
@@ -26,7 +23,8 @@ class Sharder(AbstractContextManager):
         threadsafe=False,
         allow_writing_symlinked_shard=False,
     ):
-
+        import os
+        path = os.fspath(path)
         self.path = path
         self.readonly = readonly
         self.append_only = append_only
@@ -48,13 +46,7 @@ class Sharder(AbstractContextManager):
             self.shard_mode_last_existing = 'r+b'
             self.shard_mode_new = 'x+b'
 
-        self._shard_files = None
-        if threadsafe:
-            import multiprocessing_utils
-
-            self.local = multiprocessing_utils.local()
-        else:
-            self.local = None
+        self._shard_files_storage = ThreadLocalStorage(threadsafe)
 
     # READING
     def readinto_from_address(self, shard, offset, buffer, expected_crc32c=None):
@@ -73,16 +65,52 @@ class Sharder(AbstractContextManager):
             raise ValueError('CRC32C mismatch')
         return data
 
-    def open_from_address(self, shard, offset, size, mode='r'):
-        return FileSection(self.shard_files[shard], offset, size, readonly=mode in ('r', 'rb'))
+    def open_from_address(
+        self,
+        shard,
+        offset,
+        size,
+        mode='rb',
+        on_close_callback=None,
+    ):
+        if mode in ('r', 'rb'):
+            return BarecatReadOnlyFileObject(self.shard_files[shard], offset, size)
+        else:
+            return BarecatReadWriteFileObject(
+                self.shard_files[shard],
+                offset,
+                size,
+                on_close_callback,
+                mode,
+            )
 
     # WRITING
     @raise_if_readonly
-    def add_by_path(self, filesys_path, shard, offset, size, raise_if_cannot_fit=False):
+    def add_by_path(
+        self,
+        filesys_path,
+        shard,
+        offset,
+        size,
+        raise_if_cannot_fit=False,
+        bufsize=shutil.COPY_BUFSIZE,
+    ):
         with open(filesys_path, 'rb') as in_file:
-            return self.add(
-                shard, offset, size, fileobj=in_file, raise_if_cannot_fit=raise_if_cannot_fit
+            # os.posix_fadvise(in_file.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
+
+            result = self.add(
+                shard,
+                offset,
+                size,
+                fileobj=in_file,
+                raise_if_cannot_fit=raise_if_cannot_fit,
+                bufsize=bufsize,
             )
+            try:
+                os.posix_fadvise(in_file.fileno(), 0, size, os.POSIX_FADV_DONTNEED)
+            except (OSError, AttributeError):
+                pass  # Not available on Windows
+            return result
 
     @raise_if_readonly
     def reopen_current_shard(self, mode):
@@ -109,18 +137,16 @@ class Sharder(AbstractContextManager):
     @raise_if_readonly
     def start_new_shard(self):
         self.reopen_current_shard(self.shard_mode_nonlast)
-        new_shard_file = open_(f'{self.path}-shard-{self.num_shards:05d}', self.shard_mode_new)
+        new_shard_file = open_(self.get_shard_path(self.num_shards), self.shard_mode_new)
         self.shard_files.append(new_shard_file)
         return new_shard_file
 
     @raise_if_readonly
     def start_new_shard_and_transfer_last_file(self, offset, size):
-        self.raise_if_readonly('Cannot add to a read-only Barecat')
-
         old_shard_file = self.reopen_current_shard('r+b')
-        new_shard_file = open_(f'{self.path}-shard-{self.num_shards:05d}', self.shard_mode_new)
+        new_shard_file = open_(self.get_shard_path(self.num_shards), self.shard_mode_new)
         old_shard_file.seek(offset)
-        copyfileobj(old_shard_file, new_shard_file, size)
+        copy(old_shard_file, new_shard_file, size)
         old_shard_file.truncate(offset)
         self.reopen_current_shard(self.shard_mode_nonlast)
 
@@ -153,7 +179,7 @@ class Sharder(AbstractContextManager):
             size = len(data)
 
         if shard is None:
-            shard_file = self.shard_files[-1]
+            shard_file = self.last_shard_file
             shard = self.num_shards - 1
             offset = shard_file.seek(0, os.SEEK_END)
         else:
@@ -165,7 +191,7 @@ class Sharder(AbstractContextManager):
         shard_real = shard
         if size is not None:
             if size > self.shard_size_limit:
-                raise ValueError(f'File is too large to fit into a shard')
+                raise FileTooLargeBarecatError(size, self.shard_size_limit)
             if offset + size > self.shard_size_limit:
                 if raise_if_cannot_fit:
                     raise ValueError(f'File does not fit in the shard')
@@ -182,7 +208,7 @@ class Sharder(AbstractContextManager):
             crc32c = crc32c_lib.crc32c(data)
             size_real = len(data)
         else:
-            size_real, crc32c = copyfileobj_crc32c(fileobj, shard_file, size, bufsize)
+            size_real, crc32c = copy_crc32c(fileobj, shard_file, size, bufsize=bufsize)
             if size is not None and size != size_real:
                 raise ValueError(f'Size mismatch! Expected {size}, got only {size_real}')
 
@@ -198,25 +224,32 @@ class Sharder(AbstractContextManager):
 
     def reserve(self, size):
         if size > self.shard_size_limit:
-            raise ValueError(f'File is too large to fit into a shard')
+            raise FileTooLargeBarecatError(size, self.shard_size_limit)
 
-        shard_file = self.shard_files[-1]
+        shard_file = self.last_shard_file
         offset = shard_file.seek(0, os.SEEK_END)
         if offset + size > self.shard_size_limit:
             shard_file = self.start_new_shard()
             offset = 0
 
-        shard_file.seek(offset)
-        write_zeroes(shard_file, size)
-        shard_file.flush()
+        try:
+            os.posix_fallocate(shard_file.fileno(), offset, size)
+        except (OSError, AttributeError):
+            # OSError: fallocate not supported on this filesystem
+            # AttributeError: not available on Windows
+            shard_file.truncate(offset + size)
+
         return self.num_shards - 1, offset
 
     def ensure_open_shards(self, shard_id):
         if self.num_shards < shard_id + 1:
             for i in range(self.num_shards, shard_id + 1):
                 self.shard_files.append(
-                    open_(f'{self.path}-shard-{i:05d}', mode=self.shard_mode_nonlast)
+                    open_(self.get_shard_path(i), mode=self.shard_mode_nonlast)
                 )
+
+    def get_shard_path(self, i_shard):
+        return f'{self.path}-shard-{i_shard:05d}'
 
     def open_shard_files(self):
         shard_paths = sorted(glob.glob(f'{self.path}-shard-?????'))
@@ -231,7 +264,7 @@ class Sharder(AbstractContextManager):
             )
 
         shard_files_nonlast = [open_(p, mode=self.shard_mode_nonlast) for p in shard_paths[:-1]]
-        last_shard_name = f'{self.path}-shard-{len(shard_files_nonlast):05d}'
+        last_shard_name = self.get_shard_path(len(shard_files_nonlast))
         try:
             last_shard_file = open_(last_shard_name, mode=self.shard_mode_last_existing)
         except FileNotFoundError:
@@ -285,15 +318,11 @@ class Sharder(AbstractContextManager):
     # THREADSAFE
     @property
     def shard_files(self):
-        if self.local is None:
-            if self._shard_files is None:
-                self._shard_files = self.open_shard_files()
-            return self._shard_files
-        try:
-            return self.local.shard_files
-        except AttributeError:
-            self.local.shard_files = self.open_shard_files()
-            return self.local.shard_files
+        return self._shard_files_storage.get(self.open_shard_files)
+
+    @property
+    def last_shard_file(self):
+        return self.shard_files[-1]
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()

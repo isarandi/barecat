@@ -4,23 +4,45 @@ import tarfile
 import zipfile
 from datetime import datetime
 
-from barecat.core.index import BarecatDirInfo, BarecatFileInfo, BarecatEntryInfo
-from barecat.progbar import progressbar
+from ..core.types import BarecatDirInfo, BarecatFileInfo, BarecatEntryInfo
+from ..util.progbar import progressbar
+
+
+TAR_EXTENSIONS = ('.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz')
 
 
 def iter_archive(src_path):
-    if src_path.endswith(('.tar', '.tar.gz', '.tar.bz2', '.tar.xz')):
+    """Iterate over files in a tar or zip archive.
+
+    Yields (info, fileobj) pairs where info is a BarecatFileInfo or BarecatDirInfo
+    and fileobj is a file-like object for reading the file content (None for directories).
+
+    Warning:
+        The fileobj must be fully consumed before advancing the iterator.
+        The file handle becomes invalid after the next call to next().
+        All current callers (archive2barecat, merge, etc.) handle this correctly
+        by immediately passing fileobj to writer.add() which reads all data.
+
+    Args:
+        src_path: Path to a tar or zip archive.
+
+    Yields:
+        Tuple of (BarecatEntryInfo, fileobj or None).
+    """
+    lower = src_path.lower()
+    if lower.endswith(TAR_EXTENSIONS):
         return iter_tarfile(src_path)
-    elif src_path.endswith('.zip'):
+    elif lower.endswith('.zip'):
         return iter_zipfile(src_path)
     else:
         raise ValueError('Unsupported archive format')
 
 
 def iter_archive_nocontent(src_path):
-    if src_path.endswith(('.tar', '.tar.gz', '.tar.bz2', '.tar.xz')):
+    lower = src_path.lower()
+    if lower.endswith(TAR_EXTENSIONS):
         return iter_tarfile_nocontent(src_path)
-    elif src_path.endswith('.zip'):
+    elif lower.endswith('.zip'):
         return iter_zipfile_nocontent(src_path)
     else:
         raise ValueError('Unsupported archive format')
@@ -66,34 +88,37 @@ def iter_tarfile(path):
     pbar = progressbar(None, desc='Packing files', unit=' MB', total=tar_file_size)
     progpos = 0
 
-    with tarfile.open(path, mode='r|*') as tar:
-        for member in tar:
-            if member.isdir():
-                di = BarecatDirInfo(
-                    path=member.name,
-                    mode=member.mode,
-                    uid=member.uid,
-                    gid=member.gid,
-                    mtime_ns=member.mtime * 1_000_000_000,
-                )
-                yield di, None
-            if member.isfile():
-                fi = BarecatFileInfo(
-                    path=member.name,
-                    size=member.size,
-                    mode=member.mode,
-                    uid=member.uid,
-                    gid=member.gid,
-                    mtime_ns=member.mtime * 1_000_000_000,
-                )
+    try:
+        with tarfile.open(path, mode='r|*') as tar:
+            for member in tar:
+                if member.isdir():
+                    di = BarecatDirInfo(
+                        path=member.name,
+                        mode=member.mode,
+                        uid=member.uid,
+                        gid=member.gid,
+                        mtime_ns=member.mtime * 1_000_000_000,
+                    )
+                    yield di, None
+                if member.isfile():
+                    fi = BarecatFileInfo(
+                        path=member.name,
+                        size=member.size,
+                        mode=member.mode,
+                        uid=member.uid,
+                        gid=member.gid,
+                        mtime_ns=member.mtime * 1_000_000_000,
+                    )
 
-                with tar.extractfile(member) as file_in_tar:
-                    yield fi, file_in_tar
+                    with tar.extractfile(member) as file_in_tar:
+                        yield fi, file_in_tar
 
-                new_pos = tar.fileobj.tell() // 1024 // 1024
-                delta = new_pos - progpos
-                pbar.update(delta)
-                progpos += delta
+                    new_pos = tar.fileobj.tell() // 1024 // 1024
+                    delta = new_pos - progpos
+                    pbar.update(delta)
+                    progpos += delta
+    finally:
+        pbar.close()
 
 
 def iter_tarfile_nocontent(path):
@@ -101,33 +126,36 @@ def iter_tarfile_nocontent(path):
     pbar = progressbar(None, desc='Packing files', unit=' MB', total=tar_file_size)
     progpos = 0
 
-    with tarfile.open(path, mode='r|*') as tar:
-        for member in tar:
-            if member.isdir():
-                di = BarecatDirInfo(
-                    path=member.name,
-                    mode=member.mode,
-                    uid=member.uid,
-                    gid=member.gid,
-                    mtime_ns=member.mtime * 1_000_000_000,
-                )
-                yield di
-            if member.isfile():
-                fi = BarecatFileInfo(
-                    path=member.name,
-                    shard=0,
-                    offset=member.offset_data,
-                    size=member.size,
-                    mode=member.mode,
-                    uid=member.uid,
-                    gid=member.gid,
-                    mtime_ns=member.mtime * 1_000_000_000,
-                )
-                yield fi
-                new_pos = tar.fileobj.tell() // 1024 // 1024
-                delta = new_pos - progpos
-                pbar.update(delta)
-                progpos += delta
+    try:
+        with tarfile.open(path, mode='r|*') as tar:
+            for member in tar:
+                if member.isdir():
+                    di = BarecatDirInfo(
+                        path=member.name,
+                        mode=member.mode,
+                        uid=member.uid,
+                        gid=member.gid,
+                        mtime_ns=member.mtime * 1_000_000_000,
+                    )
+                    yield di
+                if member.isfile():
+                    fi = BarecatFileInfo(
+                        path=member.name,
+                        shard=0,
+                        offset=member.offset_data,
+                        size=member.size,
+                        mode=member.mode,
+                        uid=member.uid,
+                        gid=member.gid,
+                        mtime_ns=member.mtime * 1_000_000_000,
+                    )
+                    yield fi
+                    new_pos = tar.fileobj.tell() // 1024 // 1024
+                    delta = new_pos - progpos
+                    pbar.update(delta)
+                    progpos += delta
+    finally:
+        pbar.close()
 
 
 def get_archive_writer(target_path):
@@ -146,11 +174,13 @@ class ZipWriter:
     def add(self, info: BarecatEntryInfo, fileobj=None):
         if isinstance(info, BarecatDirInfo):
             zipinfo = zipfile.ZipInfo(info.path + '/')
-            zipinfo.date_time = info.mtime_dt.timetuple()[:6]
+            if info.mtime_dt is not None:
+                zipinfo.date_time = info.mtime_dt.timetuple()[:6]
             self.zip.writestr(zipinfo, '')
         else:
             zipinfo = zipfile.ZipInfo(info.path)
-            zipinfo.date_time = info.mtime_dt.timetuple()[:6]
+            if info.mtime_dt is not None:
+                zipinfo.date_time = info.mtime_dt.timetuple()[:6]
             zipinfo.file_size = info.size
             with self.zip.open(zipinfo, 'w') as file_in_zip:
                 shutil.copyfileobj(fileobj, file_in_zip)
@@ -166,10 +196,18 @@ class ZipWriter:
 
 
 class TarWriter:
-    def __init__(self, *args, **kwargs):
+    def __init__(self, target_path, **kwargs):
         if 'mode' not in kwargs:
-            kwargs['mode'] = 'w'
-        self.tar = tarfile.open(*args, **kwargs)
+            # Auto-detect compression from extension
+            if target_path.endswith('.tar.gz') or target_path.endswith('.tgz'):
+                kwargs['mode'] = 'w:gz'
+            elif target_path.endswith('.tar.bz2') or target_path.endswith('.tbz2'):
+                kwargs['mode'] = 'w:bz2'
+            elif target_path.endswith('.tar.xz') or target_path.endswith('.txz'):
+                kwargs['mode'] = 'w:xz'
+            else:
+                kwargs['mode'] = 'w'
+        self.tar = tarfile.open(target_path, **kwargs)
 
     def add(self, info: BarecatEntryInfo, fileobj=None):
         tarinfo = tarfile.TarInfo(info.path)

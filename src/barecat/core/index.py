@@ -5,17 +5,17 @@ import os
 import os.path as osp
 import re
 import sqlite3
+import sys
 from datetime import datetime
 from typing import Iterable, Iterator, Optional, TYPE_CHECKING, Union
 
-import barecat.util
+from ..util import misc
 
-if TYPE_CHECKING:
-    from barecat import BarecatDirInfo, BarecatFileInfo, BarecatEntryInfo, Order
-else:
-    from barecat.common import BarecatDirInfo, BarecatFileInfo, BarecatEntryInfo, Order
+from .types import BarecatDirInfo, BarecatFileInfo, BarecatEntryInfo, Order
 
-from barecat.exceptions import (
+from ..core.types import SCHEMA_VERSION_MAJOR, SCHEMA_VERSION_MINOR
+
+from ..exceptions import (
     BarecatError,
     DirectoryNotEmptyBarecatError,
     FileExistsBarecatError,
@@ -23,9 +23,13 @@ from barecat.exceptions import (
     IsADirectoryBarecatError,
     NotADirectoryBarecatError,
 )
-from barecat.glob_to_regex import glob_to_regex
-from barecat.util import datetime_to_ns, normalize_path
+from ..util.misc import datetime_to_ns
+from ..core.paths import normalize_path
+from ..util.glob_helper import GlobHelper
+from ..maintenance.merge import IndexMergeHelper
 from contextlib import AbstractContextManager
+
+
 
 
 class Index(AbstractContextManager):
@@ -33,24 +37,38 @@ class Index(AbstractContextManager):
     archive.
 
     Args:
-        path: Path to the SQLite database file, including the ``"-sqlite-index"`` suffix.
-        shard_size_limit: Maximum size of a shard in bytes. If None, the shard size is unlimited.
+        path: Path to the SQLite database file (e.g., 'archive.barecat').
+        shard_size_limit: Maximum size of a shard in bytes (int) or as a string like '1G'.
+            If None, the shard size is unlimited.
         bufsize: Buffer size for fetching rows.
         readonly: Whether to open the index in read-only mode.
     """
 
     def __init__(
         self,
-        path: str,
-        shard_size_limit: Optional[int] = None,
+        path: Union[str, os.PathLike],
+        shard_size_limit: Union[int, str, None] = None,
         bufsize: Optional[int] = None,
         readonly: bool = True,
+        wal: bool = False,
+        readonly_is_immutable: bool = False,
     ):
+        path = os.fspath(path)
         is_new = not osp.exists(path)
+        self.path = path
         self.readonly = readonly
         try:
+            if self.readonly and readonly_is_immutable:
+                mode = "ro&immutable=1"
+            elif self.readonly:
+                mode = "ro"
+            else:
+                mode = "rwc"
             self.conn = sqlite3.connect(
-                f'file:{path}?mode={"ro" if self.readonly else "rwc"}', uri=True
+                f'file:{path}?mode={mode}',
+                uri=True,
+                check_same_thread=not self.readonly,
+                cached_statements=1024,
             )
         except sqlite3.OperationalError as e:
             if readonly and not osp.exists(path):
@@ -73,27 +91,112 @@ class Index(AbstractContextManager):
         self._shard_size_limit_cached = None
 
         if is_new:
-            sql_path = osp.join(osp.dirname(__file__), '../sql/schema.sql')
-            self.cursor.executescript(barecat.util.read_file(sql_path))
+            sql_dir = osp.join(osp.dirname(__file__), '../sql')
+            self.cursor.executescript(misc.read_file(f'{sql_dir}/schema.sql'))
+            self.cursor.executescript(misc.read_file(f'{sql_dir}/indexes.sql'))
+            self.cursor.executescript(misc.read_file(f'{sql_dir}/triggers.sql'))
             with self.no_triggers():
                 self.cursor.execute(
                     "INSERT INTO dirs (path, uid, gid, mtime_ns) VALUES ('', ?, ?, ?)",
                     (os.getuid(), os.getgid(), datetime_to_ns(datetime.now())),
                 )
 
-        if not self.readonly:
+        if self.readonly:
+            #self.cursor.execute('PRAGMA journal_mode=OFF')
+            #self.cursor.execute('PRAGMA synchronous=OFF')
+            if readonly_is_immutable:
+                self.cursor.execute('PRAGMA locking_mode=EXCLUSIVE')
+            self.cursor.execute('PRAGMA cache_size=-64000')
+        else:
             self.cursor.execute('PRAGMA recursive_triggers = ON')
             self.cursor.execute('PRAGMA foreign_keys = ON')
-            # self.cursor.execute('PRAGMA synchronous = NORMAL')
+
+            if wal:
+                self.cursor.execute('PRAGMA journal_mode = WAL')
+
             self._triggers_enabled = True
-            self._foreign_keys_enabled = True
             if shard_size_limit is not None:
                 self.shard_size_limit = shard_size_limit
 
+        self.cursor.execute('PRAGMA busy_timeout = 5000')
         self.cursor.execute('PRAGMA temp_store = memory')
         self.cursor.execute('PRAGMA mmap_size = 30000000000')
 
+        if not is_new:
+            self._check_schema_version()
+
         self.is_closed = False
+        self._glob_helper = GlobHelper(self)
+        self._merge_helper = IndexMergeHelper(self)
+
+    def _check_schema_version(self):
+        """Check that the database schema version is compatible with this code.
+
+        Raises BarecatError if the schema major version doesn't match.
+        Warns if the schema minor version is newer.
+        Archives without config table are treated as one major version below current.
+        """
+        try:
+            self.cursor.execute(
+                "SELECT value_int FROM config WHERE key='schema_version_major'"
+            )
+            row = self.cursor.fetchone()
+            if row is None:
+                # Config table exists but no version entry - treat as old
+                db_major = SCHEMA_VERSION_MAJOR - 1
+                db_minor = 0
+            else:
+                db_major = int(row[0])
+                self.cursor.execute(
+                    "SELECT value_int FROM config WHERE key='schema_version_minor'"
+                )
+                minor_row = self.cursor.fetchone()
+                db_minor = int(minor_row[0]) if minor_row else 0
+        except sqlite3.OperationalError:
+            # Config table doesn't exist - ancient format (pre-0.1)
+            db_major = -1
+            db_minor = 0
+
+        if db_major > SCHEMA_VERSION_MAJOR:
+            raise BarecatError(
+                f"Database schema version {db_major}.{db_minor} is newer than "
+                f"supported version {SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}. "
+                "Please upgrade barecat: pip install --upgrade barecat"
+            )
+
+        if db_major < SCHEMA_VERSION_MAJOR:
+            raise BarecatError(
+                f"Database schema version {db_major}.{db_minor} is older than "
+                f"supported version {SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}. "
+                "Please run: barecat upgrade <archive>"
+            )
+
+        # Extract archive path (handles both old format with -sqlite-index suffix and new format)
+        archive_path = self.path.removesuffix('-sqlite-index')
+
+        if db_minor > SCHEMA_VERSION_MINOR:
+            print(
+                f"Warning: Schema version {db_major}.{db_minor} is newer than supported "
+                f"{SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}. Some features may not work. "
+                "Consider: pip install --upgrade barecat",
+                file=sys.stderr,
+            )
+
+        if db_minor < SCHEMA_VERSION_MINOR:
+            if db_major == 0 and db_minor < 3:
+                print(
+                    f"Warning: Schema {db_major}.{db_minor} has a trigger bug that may cause "
+                    f"incorrect directory statistics if directories were moved or deleted. "
+                    f"Consider: barecat upgrade {archive_path}",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"Warning: Schema version is outdated ({db_major}.{db_minor} < "
+                    f"{SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}). "
+                    f"Consider: barecat upgrade {archive_path}",
+                    file=sys.stderr,
+                )
 
     # READING
     def lookup_file(self, path: str, normalized: bool = False) -> BarecatFileInfo:
@@ -114,16 +217,48 @@ class Index(AbstractContextManager):
         if not normalized:
             path = normalize_path(path)
         try:
-            return self.fetch_one_or_raise(
+            result = self.fetch_one_or_raise(
                 """
-                SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns 
+                SELECT shard, offset, size, crc32c, mode, uid, gid, mtime_ns
                 FROM files WHERE path=?
                 """,
                 (path,),
                 rowcls=BarecatFileInfo,
             )
+            result._path = path
+            return result
         except LookupError:
             raise FileNotFoundBarecatError(path)
+
+    def lookup_files(self, paths: list[str]) -> list[BarecatFileInfo]:
+        """Look up multiple files by their paths.
+
+        Args:
+            paths: Iterable of file paths.
+
+        Returns:
+            An iterator over the file info objects.
+
+        Raises:
+            FileNotFoundBarecatError: If any of the files are not found.
+        """
+        if not paths:
+            return []
+        normalized_paths = [normalize_path(p) for p in paths]
+        placeholders = ','.join('?' for _ in normalized_paths)
+        query = f"""
+            SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns 
+            FROM files WHERE path IN ({placeholders})
+        """
+        finfos = self.fetch_all(query, tuple(normalized_paths), rowcls=BarecatFileInfo)
+        found_files = {finfo.path: finfo for finfo in finfos}
+        results = []
+        for path in normalized_paths:
+            try:
+                results.append(found_files[path])
+            except KeyError:
+                raise FileNotFoundBarecatError(path)
+        return results
 
     def lookup_dir(self, dirpath: str) -> BarecatDirInfo:
         """Look up a directory by its path.
@@ -139,15 +274,16 @@ class Index(AbstractContextManager):
         """
         dirpath = normalize_path(dirpath)
         try:
-            return self.fetch_one_or_raise(
+            result = self.fetch_one_or_raise(
                 """
-                SELECT path, num_subdirs, num_files, size_tree, num_files_tree,
-                    mode, uid, gid, mtime_ns
+                SELECT num_subdirs, num_files, size_tree, num_files_tree, mode, uid, gid, mtime_ns
                 FROM dirs WHERE path=?
                 """,
                 (dirpath,),
                 rowcls=BarecatDirInfo,
             )
+            result._path = dirpath
+            return result
         except LookupError:
             raise FileNotFoundBarecatError(f'Directory {dirpath} not found in index')
 
@@ -166,7 +302,7 @@ class Index(AbstractContextManager):
         path = normalize_path(path)
         try:
             return self.lookup_file(path)
-        except LookupError:
+        except FileNotFoundBarecatError:
             return self.lookup_dir(path)
 
     def __len__(self):
@@ -193,13 +329,13 @@ class Index(AbstractContextManager):
         yield from self.iter_all_fileinfos(order=Order.ANY)
 
     def __contains__(self, path: str) -> bool:
-        """Check if a file or directory exists in the index.
+        """Check if a file exists in the index.
 
         Args:
-            path: Path of the file or directory.
+            path: Path of the file.
 
         Returns:
-            True if the file or directory exists, False otherwise.
+            True if the file exists, False otherwise.
         """
         return self.isfile(path)
 
@@ -256,7 +392,11 @@ class Index(AbstractContextManager):
         """Iterate over all file info objects in the index.
 
         Args:
-            order: Order in which to iterate over the files.
+            order: Order in which to iterate over the files. The default ANY
+                uses SQLite's natural rowid order, which is typically address
+                order (shard, offset) if the archive was built by linear
+                insertion. ANY also streams results immediately, while explicit
+                ordering waits for a full sort before returning the first row.
             bufsize: Buffer size for fetching rows.
 
         Returns:
@@ -407,7 +547,7 @@ class Index(AbstractContextManager):
         """
         dinfo = self._as_dirinfo(diritem)
         if dinfo.num_files == 0:
-            return []
+            return iter([])
         query = """
             SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns
             FROM files WHERE parent=?"""
@@ -432,7 +572,7 @@ class Index(AbstractContextManager):
         """
         dinfo = self._as_dirinfo(diritem)
         if dinfo.num_subdirs == 0:
-            return []
+            return iter([])
         query = """
             SELECT path, num_subdirs, num_files, size_tree, num_files_tree, mode, uid, gid,
             mtime_ns
@@ -526,32 +666,20 @@ class Index(AbstractContextManager):
             self.iter_direct_fileinfos(dinfo, order=order, bufsize=bufsize),
         )
 
-    # glob paths
+    # Glob methods (delegated to GlobHelper)
+
     def raw_glob_paths(self, pattern, order: Order = Order.ANY):
-        pattern = normalize_path(pattern)
-        query = """
-            SELECT path FROM dirs WHERE path GLOB :pattern
-            UNION ALL
-            SELECT path FROM files WHERE path GLOB :pattern"""
-        query += order.as_query_text()
-        rows = self.fetch_all(query, dict(pattern=pattern))
-        return [row['path'] for row in rows]
+        return self._glob_helper.raw_glob_paths(pattern, order)
 
     def raw_iterglob_paths(
         self, pattern, order: Order = Order.ANY, only_files=False, bufsize=None
     ):
-        pattern = normalize_path(pattern)
-        if only_files:
-            query = """
-                SELECT path FROM files WHERE path GLOB :pattern"""
-        else:
-            query = """
-                SELECT path FROM dirs WHERE path GLOB :pattern
-                UNION ALL
-                SELECT path FROM files WHERE path GLOB :pattern"""
-        query += order.as_query_text()
-        rows = self.fetch_iter(query, dict(pattern=pattern), bufsize=bufsize)
-        return (row['path'] for row in rows)
+        return self._glob_helper.raw_iterglob_paths(pattern, order, only_files, bufsize)
+
+    def raw_iterglob_paths_multi(
+        self, patterns, order: Order = Order.ANY, only_files=False, bufsize=None
+    ):
+        return self._glob_helper.raw_iterglob_paths_multi(patterns, order, only_files, bufsize)
 
     def glob_paths(
         self,
@@ -575,11 +703,7 @@ class Index(AbstractContextManager):
         Returns:
             A list of paths.
         """
-        return list(
-            self.iterglob_paths(
-                pattern, recursive=recursive, include_hidden=include_hidden, only_files=only_files
-            )
-        )
+        return self._glob_helper.glob_paths(pattern, recursive, include_hidden, only_files)
 
     def iterglob_paths(
         self,
@@ -605,125 +729,15 @@ class Index(AbstractContextManager):
         Returns:
             An iterator over the paths.
         """
+        return self._glob_helper.iterglob_paths(
+            pattern, recursive, include_hidden, bufsize, only_files
+        )
 
-        if recursive and pattern == '**':
-            if only_files:
-                yield from self.iter_all_filepaths(bufsize=bufsize)
-            else:
-                yield from self.iter_all_paths(bufsize=bufsize)
-            return
-
-        parts = pattern.split('/')
-        num_has_wildcard = sum(1 for p in parts if '*' in p or '?' in p)
-        has_no_brackets = '[' not in pattern and ']' not in pattern
-        has_no_question = '?' not in pattern
-
-        num_asterisk = pattern.count('*')
-        if (
-            recursive
-            and has_no_brackets
-            and has_no_question
-            and num_asterisk == 3
-            and '*' not in pattern.replace('/**/*', '')
-        ):
-            yield from self.raw_iterglob_paths(
-                pattern.replace('/**/*', '/*'), bufsize=bufsize, only_files=only_files
-            )
-            return
-
-        if (
-            recursive
-            and has_no_brackets
-            and has_no_question
-            and num_asterisk == 2
-            and pattern.endswith('/**')
-        ):
-            if not only_files and self.isdir(pattern[:-3]):
-                yield pattern[:-3]
-            yield from self.raw_iterglob_paths(
-                pattern[:-1], bufsize=bufsize, only_files=only_files
-            )
-            return
-
-        regex_pattern = glob_to_regex(pattern, recursive=recursive, include_hidden=include_hidden)
-        if (not recursive or '**' not in pattern) and num_has_wildcard == 1 and has_no_brackets:
-            parts = pattern.split('/')
-            i_has_wildcard = next(i for i, p in enumerate(parts) if '*' in p or '?' in p)
-            prefix = '/'.join(parts[:i_has_wildcard])
-            wildcard_is_in_last_part = i_has_wildcard == len(parts) - 1
-            if wildcard_is_in_last_part:
-                info_generator = (
-                    self.iter_direct_fileinfos(prefix)
-                    if only_files
-                    else self.iterdir_infos(prefix)
-                )
-                for info in info_generator:
-                    if re.match(regex_pattern, info.path):
-                        yield info.path
-            else:
-                suffix = '/'.join(parts[i_has_wildcard + 1 :])
-                further_subdirs_wanted = len(parts) > i_has_wildcard + 2
-                for subdirinfo in self.iter_subdir_dirinfos(prefix):
-                    if (
-                        further_subdirs_wanted and subdirinfo.num_subdirs == 0
-                    ) or subdirinfo.num_entries == 0:
-                        continue
-                    candidate = subdirinfo.path + '/' + suffix
-                    if re.match(regex_pattern, candidate) and (
-                        (self.exists(candidate) and not only_files) or self.isfile(candidate)
-                    ):
-                        yield candidate
-            return
-
-        for candidate in self.raw_iterglob_paths(pattern, only_files=only_files, bufsize=bufsize):
-            if re.match(regex_pattern, candidate):
-                yield candidate
-
-    ## glob infos
     def raw_iterglob_infos(self, pattern, only_files=False, bufsize=None):
-        pattern = normalize_path(pattern)
-        yield from self.fetch_iter(
-            """
-            SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns
-            FROM files WHERE path GLOB :pattern
-            """,
-            dict(pattern=pattern),
-            bufsize=bufsize,
-            rowcls=BarecatFileInfo,
-        )
-        if only_files:
-            return
-        yield from self.fetch_iter(
-            """
-            SELECT path, num_subdirs, num_files, size_tree, num_files_tree,
-                   mode, uid, gid, mtime_ns
-            FROM dirs WHERE path GLOB :pattern
-            """,
-            dict(pattern=pattern),
-            bufsize=bufsize,
-            rowcls=BarecatDirInfo,
-        )
+        return self._glob_helper.raw_iterglob_infos(pattern, only_files, bufsize)
 
     def raw_iterglob_infos_incl_excl(self, patterns, only_files=False, bufsize=None):
-        pattern_dict = {f'pattern{i}': normalize_path(p[1]) for i, p in enumerate(patterns)}
-        globexpr = f'path GLOB :pattern{0}' if patterns[0][0] else f'path NOT GLOB :pattern{0}'
-        for i, p in enumerate(patterns[1:], start=1):
-            globexpr += f' OR path GLOB :pattern{i}' if p[0] else f' AND path NOT GLOB :pattern{i}'
-
-        fquery = f"""
-            SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns 
-            FROM files WHERE {globexpr}
-            """
-        yield from self.fetch_iter(fquery, pattern_dict, bufsize=bufsize, rowcls=BarecatFileInfo)
-        if only_files:
-            return
-
-        dquery = f"""
-            SELECT path, num_subdirs, num_files, size_tree, num_files_tree,
-                   mode, uid, gid, mtime_ns 
-            FROM dirs WHERE {globexpr}
-            """
-        yield from self.fetch_iter(dquery, pattern_dict, bufsize=bufsize, rowcls=BarecatDirInfo)
+        return self._glob_helper.raw_iterglob_infos_incl_excl(patterns, only_files, bufsize)
 
     def iterglob_infos(
         self,
@@ -749,83 +763,35 @@ class Index(AbstractContextManager):
         Returns:
             An iterator over the file and directory info objects.
         """
-        if recursive and pattern == '**':
-            if only_files:
-                yield from self.iter_all_fileinfos(bufsize=bufsize)
-            else:
-                yield from self.iter_all_infos(bufsize=bufsize)
-            return
+        return self._glob_helper.iterglob_infos(
+            pattern, recursive, include_hidden, bufsize, only_files
+        )
 
-        parts = pattern.split('/')
-        num_has_wildcard = sum(1 for p in parts if '*' in p or '?' in p)
-        has_no_brackets = '[' not in pattern and ']' not in pattern
-        has_no_question = '?' not in pattern
+    def iterglob_infos_incl_excl(
+        self,
+        rules: list[tuple[str, str]],
+        default_include: bool = True,
+        only_files: bool = False,
+        bufsize: Optional[int] = None,
+    ) -> Iterator[BarecatEntryInfo]:
+        r"""Iterate over infos matching rsync-style include/exclude rules.
 
-        num_asterisk = pattern.count('*')
-        if (
-            recursive
-            and has_no_brackets
-            and has_no_question
-            and num_asterisk == 3
-            and '*' not in pattern.replace('/**/*', '')
-        ):
-            yield from self.raw_iterglob_infos(
-                pattern.replace('/**/*', '/*'), bufsize=bufsize, only_files=only_files
-            )
-            return
+        Uses "first match wins" semantics like rsync: each file is tested against
+        rules in order, and the first matching rule determines inclusion/exclusion.
 
-        if (
-            recursive
-            and has_no_brackets
-            and has_no_question
-            and num_asterisk == 2
-            and pattern.endswith('/**')
-        ):
-            if not only_files and self.isdir(pattern[:-3]):
-                yield pattern[:-3]
-            yield from self.raw_iterglob_infos(
-                pattern[:-1], bufsize=bufsize, only_files=only_files
-            )
-            return
+        Args:
+            rules: List of (sign, pattern) tuples. sign is '+' for include,
+                   '-' for exclude. Patterns use Python glob syntax with ** support.
+            default_include: If no rule matches, include (True) or exclude (False).
+            only_files: Whether to return only files, not directories.
+            bufsize: Buffer size for fetching rows.
 
-        regex_pattern = glob_to_regex(pattern, recursive=recursive, include_hidden=include_hidden)
-        if (not recursive or '**' not in pattern) and num_has_wildcard == 1 and has_no_brackets:
-            parts = pattern.split('/')
-            i_has_wildcard = next(i for i, p in enumerate(parts) if '*' in p or '?' in p)
-            prefix = '/'.join(parts[:i_has_wildcard])
-            wildcard_is_in_last_part = i_has_wildcard == len(parts) - 1
-            if wildcard_is_in_last_part:
-                info_generator = (
-                    self.iter_direct_fileinfos(prefix)
-                    if only_files
-                    else self.iterdir_infos(prefix)
-                )
-                for info in info_generator:
-                    if re.match(regex_pattern, info.path):
-                        yield info
-            else:
-                suffix = '/'.join(parts[i_has_wildcard + 1 :])
-                further_subdirs_wanted = len(parts) > i_has_wildcard + 2
-                for subdirinfo in self.iter_subdir_dirinfos(prefix):
-                    if (
-                        further_subdirs_wanted and subdirinfo.num_subdirs == 0
-                    ) or subdirinfo.num_entries == 0:
-                        continue
-                    candidate_path = subdirinfo.path + '/' + suffix
-                    if re.match(regex_pattern, candidate_path):
-                        try:
-                            yield (
-                                self.lookup_file(candidate_path)
-                                if only_files
-                                else self.lookup(candidate_path)
-                            )
-                        except LookupError:
-                            pass
-            return
-
-        for info in self.raw_iterglob_infos(pattern, only_files=only_files, bufsize=bufsize):
-            if re.match(regex_pattern, info):
-                yield info
+        Returns:
+            An iterator over matching file/directory info objects.
+        """
+        return self._glob_helper.iterglob_infos_incl_excl(
+            rules, default_include, only_files, bufsize
+        )
 
     ## walking
     def walk_infos(
@@ -880,32 +846,6 @@ class Index(AbstractContextManager):
                 [osp.basename(f.path) for f in files],
             )
 
-    ######################
-    def reverse_lookup(self, shard: int, offset: int) -> BarecatFileInfo:
-        """Look up a file by its shard and offset.
-
-        Args:
-            shard: Shard number.
-            offset: Offset within the shard.
-
-        Returns:
-            The file info object.
-
-        Raises:
-            FileNotFoundBarecatError: If the file is not found.
-        """
-
-        try:
-            return self.fetch_one_or_raise(
-                'SELECT * FROM files WHERE shard=:shard AND offset=:offset',
-                dict(shard=shard, offset=offset),
-                rowcls=BarecatFileInfo,
-            )
-        except LookupError:
-            raise FileNotFoundBarecatError(
-                f'File with shard {shard} and offset {offset} not found'
-            )
-
     def get_last_file(self):
         """Return the last file in the index, i.e., the one with the highest offset in the last
         shard (shard with largest numerical ID).
@@ -938,15 +878,13 @@ class Index(AbstractContextManager):
             The logical end offset of the shard.
         """
 
-        result = self.fetch_one(
+        # COALESCE guarantees a row is always returned, so result is never None
+        return self.fetch_one(
             """
             SELECT coalesce(MAX(offset + size), 0) as end FROM files WHERE shard=:shard
             """,
             dict(shard=shard),
-        )
-        if result is None:
-            return 0
-        return result[0]
+        )[0]
 
     @property
     def shard_size_limit(self) -> int:
@@ -959,17 +897,16 @@ class Index(AbstractContextManager):
         return self._shard_size_limit_cached
 
     @shard_size_limit.setter
-    def shard_size_limit(self, value: int):
-        """Set the maximum allowed shard size, in bytes. Upon reaching this limit, a new shard is
-        created.
+    def shard_size_limit(self, value: Union[int, str]):
+        """Set the maximum allowed shard size. Upon reaching this limit, a new shard is created.
 
         Args:
-            value: The new shard size limit.
+            value: The new shard size limit in bytes, or a string like '1G', '500M', '100K'.
         """
         if self.readonly:
             raise ValueError('Cannot set shard size limit on a read-only index')
         if isinstance(value, str):
-            value = barecat.util.parse_size(value)
+            value = misc.parse_size(value)
 
         if value == self.shard_size_limit:
             return
@@ -1037,16 +974,103 @@ class Index(AbstractContextManager):
                 finfo.asdict(),
             )
         except sqlite3.IntegrityError as e:
+            if 'Path already exists as file' in str(e):
+                raise NotADirectoryBarecatError(
+                    f'A parent of {finfo.path!r} exists as a file') from e
+            if 'Path already exists as directory' in str(e):
+                raise IsADirectoryBarecatError(finfo.path) from e
             raise FileExistsBarecatError(finfo.path) from e
 
-    def move_file(self, path: str, new_shard: int, new_offset: int):
+    def add_files(self, finfos: list[BarecatFileInfo]):
+        """Add multiple files to the index.
+
+        Args:
+            finfos: List of file info objects.
+
+        Raises:
+            FileExistsBarecatError: If any file already exists.
+        """
+        if not finfos:
+            return
+        try:
+            self.cursor.executemany(
+                """
+                INSERT INTO files (
+                    path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
+                VALUES (:path, :shard, :offset, :size, :crc32c, :mode, :uid, :gid, :mtime_ns)
+                """,
+                [finfo.asdict() for finfo in finfos],
+            )
+        except sqlite3.IntegrityError as e:
+            if 'Path already exists as file' in str(e):
+                raise NotADirectoryBarecatError(
+                    'A parent path exists as a file') from e
+            if 'Path already exists as directory' in str(e):
+                raise IsADirectoryBarecatError('Path exists as a directory') from e
+            raise FileExistsBarecatError([finfo.path for finfo in finfos]) from e
+
+    def update_file(
+        self,
+        path: str,
+        new_shard: Optional[int] = None,
+        new_offset: Optional[int] = None,
+        new_size: Optional[int] = None,
+        new_crc32c: Optional[int] = None,
+        new_mtime_ns: Optional[int] = None,
+        new_mode: Optional[int] = None,
+        new_uid: Optional[int] = None,
+        new_gid: Optional[int] = None,
+    ):
+        """Update file metadata in the index.
+
+        Args:
+            path: Path of the file.
+            new_shard: New shard number. If None, the shard is not updated.
+            new_offset: New offset within the shard. If None, the offset is not updated.
+            new_size: New size of the file. If None, the size is not updated.
+            new_crc32c: New CRC32C checksum of the file. If None, the checksum is not updated.
+            new_mtime_ns: New modification time in nanoseconds. If None, not updated.
+            new_mode: New file mode. If None, not updated.
+            new_uid: New user ID. If None, not updated.
+            new_gid: New group ID. If None, not updated.
+        """
         path = normalize_path(path)
+        update_fields = []
+        params = dict(path=path)
+        if new_shard is not None:
+            update_fields.append('shard = :new_shard')
+            params['new_shard'] = new_shard
+        if new_offset is not None:
+            update_fields.append('offset = :new_offset')
+            params['new_offset'] = new_offset
+        if new_size is not None:
+            update_fields.append('size = :new_size')
+            params['new_size'] = new_size
+        if new_crc32c is not None:
+            update_fields.append('crc32c = :new_crc32c')
+            params['new_crc32c'] = new_crc32c
+        if new_mtime_ns is not None:
+            update_fields.append('mtime_ns = :new_mtime_ns')
+            params['new_mtime_ns'] = new_mtime_ns
+        if new_mode is not None:
+            update_fields.append('mode = :new_mode')
+            params['new_mode'] = new_mode
+        if new_uid is not None:
+            update_fields.append('uid = :new_uid')
+            params['new_uid'] = new_uid
+        if new_gid is not None:
+            update_fields.append('gid = :new_gid')
+            params['new_gid'] = new_gid
+
+        if not update_fields:
+            return
+
+        update_clause = ', '.join(update_fields)
         self.cursor.execute(
-            """
-            UPDATE files
-            SET shard = :shard, offset = :offset
-            WHERE path = :path""",
-            dict(shard=new_shard, offset=new_offset, path=path),
+            f"""
+            UPDATE files SET {update_clause} WHERE path = :path
+            """,
+            params,
         )
 
     def add_dir(self, dinfo: BarecatDirInfo, exist_ok=False):
@@ -1073,11 +1097,14 @@ class Index(AbstractContextManager):
             self.cursor.execute(
                 f"""
                 INSERT {maybe_replace} INTO dirs (path, mode, uid, gid, mtime_ns)
-                VALUES (:path, :mode, :uid, :gid, :mtime_ns) 
+                VALUES (:path, :mode, :uid, :gid, :mtime_ns)
                 """,
                 dinfo.asdict(),
             )
         except sqlite3.IntegrityError as e:
+            if 'Path already exists as file' in str(e):
+                raise NotADirectoryBarecatError(
+                    f'{dinfo.path!r} or a parent exists as a file') from e
             raise FileExistsBarecatError(dinfo.path) from e
 
     def rename(self, old: Union[BarecatEntryInfo, str], new: str, allow_overwrite: bool = False):
@@ -1285,8 +1312,8 @@ class Index(AbstractContextManager):
                 if dinfo.num_subdirs > 0:
                     self.cursor.execute(
                         r"""
-                        DELETE FROM dirs WHERE path GLOB 
-                        replace(replace(replace(:dirpath, '[', '[[]'), '?', '[?]'), '*', '[*]') 
+                        DELETE FROM dirs WHERE path GLOB
+                        replace(replace(replace(:dirpath, '[', '[[]'), '?', '[?]'), '*', '[*]')
                          || '/*'
                         """,
                         dict(dirpath=dinfo.path),
@@ -1436,40 +1463,63 @@ class Index(AbstractContextManager):
         """
         is_good = True
         # check if num_subdirs, num_files, size_tree, num_files_tree are correct
+        # Uses bottom-up recursive CTE: O(files * avg_depth) instead of O(dirs * files) with GLOB
+
+        # Compute treestats (size_tree, num_files_tree) using recursive CTE
         self.cursor.execute(
             r"""
-            CREATE TEMPORARY TABLE temp_dir_stats (
-                path TEXT PRIMARY KEY,
-                num_files INTEGER DEFAULT 0,
-                num_subdirs INTEGER DEFAULT 0,
-                size_tree INTEGER DEFAULT 0,
-                num_files_tree INTEGER DEFAULT 0)
-        """
+            CREATE TEMPORARY TABLE tmp_verify_treestats AS
+                WITH RECURSIVE file_ancestors AS (
+                    SELECT parent AS ancestor, size FROM files
+                    UNION ALL
+                    SELECT
+                        rtrim(rtrim(ancestor, replace(ancestor, '/', '')), '/'),
+                        size
+                    FROM file_ancestors
+                    WHERE ancestor != ''
+                )
+                SELECT
+                    ancestor AS path,
+                    SUM(size) AS size_tree,
+                    COUNT(*) AS num_files_tree
+                FROM file_ancestors
+                GROUP BY ancestor
+            """
         )
 
+        # Compute direct file counts per directory
         self.cursor.execute(
             r"""
-            INSERT INTO temp_dir_stats (path, num_files, num_subdirs, size_tree, num_files_tree)
-            SELECT
-                dirs.path,
-                -- Calculate the number of files in this directory
-                (SELECT COUNT(*)
-                 FROM files
-                 WHERE files.parent = dirs.path) AS num_files,
-            
-                -- Calculate the number of subdirectories in this directory
-                (SELECT COUNT(*)
-                 FROM dirs AS subdirs
-                 WHERE subdirs.parent = dirs.path) AS num_subdirs,
-            
-                -- Calculate the size_tree and num_files_tree using aggregation
-                coalesce(SUM(files.size), 0) AS size_tree,
-                COUNT(files.path) AS num_files_tree
-            FROM dirs LEFT JOIN files ON files.path GLOB
-                replace(replace(replace(dirs.path, '[', '[[]'), '?', '[?]'), '*', '[*]') || '/*'
-                OR dirs.path = ''
-            GROUP BY dirs.path
-        """
+            CREATE TEMPORARY TABLE tmp_verify_file_counts AS
+                SELECT parent AS path, COUNT(*) AS num_files
+                FROM files GROUP BY parent
+            """
+        )
+
+        # Compute direct subdir counts per directory
+        self.cursor.execute(
+            r"""
+            CREATE TEMPORARY TABLE tmp_verify_subdir_counts AS
+                SELECT parent AS path, COUNT(*) AS num_subdirs
+                FROM dirs GROUP BY parent
+            """
+        )
+
+        # Join all computed stats into a single temp table
+        self.cursor.execute(
+            r"""
+            CREATE TEMPORARY TABLE temp_dir_stats AS
+                SELECT
+                    d.path,
+                    COALESCE(fc.num_files, 0) AS num_files,
+                    COALESCE(sc.num_subdirs, 0) AS num_subdirs,
+                    COALESCE(ts.size_tree, 0) AS size_tree,
+                    COALESCE(ts.num_files_tree, 0) AS num_files_tree
+                FROM dirs d
+                LEFT JOIN tmp_verify_file_counts fc ON fc.path = d.path
+                LEFT JOIN tmp_verify_subdir_counts sc ON sc.path = d.path
+                LEFT JOIN tmp_verify_treestats ts ON ts.path = d.path
+            """
         )
 
         res = self.fetch_many(
@@ -1510,17 +1560,40 @@ class Index(AbstractContextManager):
         integrity_check_result = self.fetch_all('PRAGMA integrity_check')
         if integrity_check_result[0][0] != 'ok':
             str_result = str([dict(**x) for x in integrity_check_result])
-            print('Integrity check failed: \n' + str_result)
+            print('Integrity check failed: \n' + str_result, file=sys.stderr)
             is_good = False
         foreign_keys_check_result = self.fetch_all('PRAGMA foreign_key_check')
         if foreign_keys_check_result:
-            str_result = str([dict(**x) for x in integrity_check_result])
-            print('Foreign key check failed: \n' + str_result)
+            str_result = str([dict(**x) for x in foreign_keys_check_result])
+            print('Foreign key check failed: \n' + str_result, file=sys.stderr)
             is_good = False
+
+        # Check for paths that exist as both file and directory
+        # Scan dirs (smaller) and lookup in files (larger)
+        conflicts = self.fetch_all(
+            "SELECT path FROM dirs WHERE path IN (SELECT path FROM files)"
+        )
+        if conflicts:
+            is_good = False
+            print('Paths exist as both file and directory:')
+            for row in conflicts:
+                print(f'  {row[0]}')
+
+        # Cleanup temporary tables
+        self.cursor.execute('DROP TABLE IF EXISTS tmp_verify_treestats')
+        self.cursor.execute('DROP TABLE IF EXISTS tmp_verify_file_counts')
+        self.cursor.execute('DROP TABLE IF EXISTS tmp_verify_subdir_counts')
+        self.cursor.execute('DROP TABLE IF EXISTS temp_dir_stats')
 
         return is_good
 
-    def merge_from_other_barecat(self, source_index_path: str, ignore_duplicates: bool = False):
+    def merge_from_other_barecat(
+        self,
+        source_index_path: str,
+        ignore_duplicates: bool = False,
+        prefix: str = None,
+        update_treestats: bool = True,
+    ):
         """Adds the files and directories from another Barecat index to this one.
 
         Typically used during symlink-based merging. That is, the shards in the source Barecat
@@ -1532,73 +1605,71 @@ class Index(AbstractContextManager):
         Args:
             source_index_path: Path to the source Barecat index.
             ignore_duplicates: Whether to ignore duplicate files and directories.
+            prefix: Optional path prefix to prepend to all paths.
+            update_treestats: Whether to recompute directory tree statistics after merging.
 
         Raises:
             sqlite3.DatabaseError: If an error occurs during the operation.
-
+            ValueError: If file/directory path conflicts exist between source and target.
         """
+        self._merge_helper.merge_from_other_barecat(
+            source_index_path, ignore_duplicates, prefix, update_treestats
+        )
 
-        with self.no_triggers():
-            self.cursor.execute(f"ATTACH DATABASE 'file:{source_index_path}?mode=ro' AS sourcedb")
+    def check_merge_conflicts(self, prefix: str) -> str:
+        """Check for file/directory conflicts with attached sourcedb.
 
-            # Duplicate dirs are allowed, they will be merged and updated
-            self.cursor.execute(
-                """
-                INSERT INTO dirs (
-                    path, num_subdirs, num_files, size_tree, num_files_tree,
-                    mode, uid, gid, mtime_ns)
-                SELECT path, num_subdirs, num_files, size_tree, num_files_tree,
-                    mode, uid, gid, mtime_ns
-                FROM sourcedb.dirs WHERE true
-                ON CONFLICT (dirs.path) DO UPDATE SET
-                    num_subdirs = num_subdirs + excluded.num_subdirs,
-                    num_files = num_files + excluded.num_files,
-                    size_tree = size_tree + excluded.size_tree,
-                    num_files_tree = num_files_tree + excluded.num_files_tree,
-                    mode = coalesce(
-                        dirs.mode | excluded.mode,
-                        coalesce(dirs.mode, 0) | excluded.mode,
-                        dirs.mode | coalesce(excluded.mode, 0)),
-                    uid = coalesce(excluded.uid, dirs.uid),
-                    gid = coalesce(excluded.gid, dirs.gid),
-                    mtime_ns = coalesce(
-                        max(dirs.mtime_ns, excluded.mtime_ns),
-                        max(coalesce(dirs.mtime_ns, 0), excluded.mtime_ns),
-                        max(dirs.mtime_ns, coalesce(excluded.mtime_ns, 0)))
-                """
-            )
-            new_shard_number = self.num_used_shards
-            maybe_ignore = 'OR IGNORE' if ignore_duplicates else ''
-            self.cursor.execute(
-                f"""
-                INSERT {maybe_ignore} INTO files (
-                    path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
-                SELECT path, shard + ?, offset, size, crc32c, mode, uid, gid, mtime_ns
-                FROM sourcedb.files
-                """,
-                (new_shard_number,),
-            )
-            self.conn.commit()
-            self.cursor.execute("DETACH DATABASE sourcedb")
+        Must be called while sourcedb is attached.
 
-            if ignore_duplicates:
-                self.update_treestats()
-                self.conn.commit()
+        Args:
+            prefix: Path prefix to prepend to source paths (empty string for no prefix).
+
+        Returns:
+            SQL expression for transforming source paths with prefix.
+
+        Raises:
+            ValueError: If file/directory path conflicts exist.
+        """
+        return self._merge_helper.check_merge_conflicts(prefix)
 
     def update_treestats(self):
-        print('Creating temporary tables for treestats')
+        """Recompute size_tree and num_files_tree for all directories.
+
+        Uses a bottom-up recursive CTE that expands each file to all its ancestor
+        directories, then aggregates. This is O(files * avg_depth) instead of the
+        naive GLOB/LIKE join which is O(dirs * files).
+
+        Performance comparison (10k files, 769 dirs, avg depth ~3):
+
+            | Method | Time   | vs CTE    |
+            |--------|--------|-----------|
+            | GLOB   | 2.53s  | 73x slower|
+            | LIKE   | 0.67s  | 19x slower|
+            | CTE    | 0.04s  | baseline  |
+
+        On a real dataset (21M files, 341k dirs):
+            - CTE took 170s
+            - GLOB/LIKE would take hours (O(dirs * files) = 7 trillion comparisons)
+        """
+        print('Computing treestats (bottom-up recursive CTE)')
         self.cursor.execute(
             r"""
             CREATE TEMPORARY TABLE tmp_treestats AS
-                SELECT 
-                    dirs.path,
-                    coalesce(SUM(files.size), 0) AS size_tree,
-                    COUNT(files.path) AS num_files_tree
-                FROM dirs
-                LEFT JOIN files ON files.path GLOB
-                    replace(replace(replace(dirs.path, '[', '[[]'), '?', '[?]'), '*', '[*]') || '/*'
-                    OR dirs.path = ''
-                GROUP BY dirs.path
+                WITH RECURSIVE file_ancestors AS (
+                    SELECT parent AS ancestor, size FROM files
+                    UNION ALL
+                    SELECT
+                        rtrim(rtrim(ancestor, replace(ancestor, '/', '')), '/'),
+                        size
+                    FROM file_ancestors
+                    WHERE ancestor != ''
+                )
+                SELECT
+                    ancestor AS path,
+                    SUM(size) AS size_tree,
+                    COUNT(*) AS num_files_tree
+                FROM file_ancestors
+                GROUP BY ancestor
             """
         )
 
@@ -1627,18 +1698,44 @@ class Index(AbstractContextManager):
         )
 
         print('Updating dirs table with treestats')
+        with self.no_triggers():
+            self.cursor.execute(
+                r"""
+                UPDATE dirs
+                SET
+                    num_files = COALESCE(fc.num_files, 0),
+                    num_subdirs = COALESCE(sc.num_subdirs, 0),
+                    size_tree = COALESCE(ts.size_tree, 0),
+                    num_files_tree = COALESCE(ts.num_files_tree, 0)
+                FROM dirs d
+                LEFT JOIN tmp_file_counts fc ON fc.path = d.path
+                LEFT JOIN tmp_subdir_counts sc ON sc.path = d.path
+                LEFT JOIN tmp_treestats ts ON ts.path = d.path
+                WHERE dirs.path = d.path;
+            """
+            )
+
+    def update_dirs(self):
+        """Ensure all ancestor directories exist for both files and dirs."""
         self.cursor.execute(
-            r"""
-            UPDATE dirs
-            SET
-                num_subdirs = COALESCE(sc.num_subdirs, 0),
-                size_tree = COALESCE(ts.size_tree, 0),
-                num_files_tree = COALESCE(ts.num_files_tree, 0)
-            FROM tmp_file_counts fc
-            LEFT JOIN tmp_subdir_counts sc ON sc.path = fc.path
-            LEFT JOIN tmp_treestats ts ON ts.path = fc.path
-            WHERE dirs.path = fc.path;
-        """
+            """
+            WITH RECURSIVE
+                all_ancestors AS (
+                    -- Parents of files (using generated column)
+                    SELECT DISTINCT parent AS path FROM files WHERE parent != ''
+                    UNION
+                    -- Parents of dirs (using generated column)
+                    SELECT DISTINCT parent AS path FROM dirs WHERE parent IS NOT NULL
+                    UNION
+                    -- Walk up the tree (must compute for CTE values)
+                    SELECT rtrim(rtrim(path, replace(path, '/', '')), '/')
+                    FROM all_ancestors
+                    WHERE path LIKE '%/%'
+                )
+            INSERT OR IGNORE INTO dirs (path)
+            SELECT path FROM all_ancestors
+            UNION ALL SELECT ''
+            """
         )
 
     @property
@@ -1656,16 +1753,92 @@ class Index(AbstractContextManager):
 
     @contextlib.contextmanager
     def no_triggers(self):
-        """Context manager to temporarily disable triggers."""
-        prev_setting = self._triggers_enabled
-        if not prev_setting:
+        """Context manager to temporarily disable triggers.
+
+        Also disables foreign key checks, since triggers are what create parent
+        directory rows - without them, FK constraints would fail.
+
+        Note: Does NOT rebuild dirs/treestats on exit. Use bulk_write_mode() for
+        that, or call update_dirs() and update_treestats() manually.
+        """
+        prev_triggers = self._triggers_enabled
+        prev_fk = self._foreign_keys_enabled
+        if not prev_triggers:
             yield
             return
         try:
             self._triggers_enabled = False
+            self._foreign_keys_enabled = False
             yield
         finally:
-            self._triggers_enabled = prev_setting
+            self._triggers_enabled = prev_triggers
+            self._foreign_keys_enabled = prev_fk
+
+    @contextlib.contextmanager
+    def bulk_mode(
+        self,
+        drop_indexes: bool = False,
+        update_dirs_at_end: bool = True,
+        update_treestats_at_end: bool = True,
+    ):
+        """Context manager for bulk operations with automatic cleanup.
+
+        Args:
+            drop_indexes: If True, drops indexes for maximum speed (use only for
+                fresh/empty archives). If False (default), keeps indexes so that
+                ON CONFLICT duplicate handling works (use for merges/updates).
+            update_dirs_at_end: If True (default), creates missing ancestor
+                directories on exit.
+            update_treestats_at_end: If True (default), recomputes directory
+                tree statistics on exit.
+
+        On exit:
+        - Rebuilds indexes and triggers (if dropped)
+        - Re-enables triggers and foreign keys (if not dropped)
+        - Creates missing ancestor directories (if update_dirs_at_end)
+        - Recomputes directory tree statistics (if update_treestats_at_end)
+        """
+        if drop_indexes:
+            if self.conn.in_transaction:
+                self.conn.commit()
+
+            # Disable FK (required because dropping unique index on dirs.path breaks FK check)
+            self._foreign_keys_enabled = False
+
+            # Drop triggers (they reference unique indexes via ON CONFLICT)
+            self.cursor.execute('DROP TRIGGER IF EXISTS add_file')
+            self.cursor.execute('DROP TRIGGER IF EXISTS del_file')
+            self.cursor.execute('DROP TRIGGER IF EXISTS move_file')
+            self.cursor.execute('DROP TRIGGER IF EXISTS resize_file')
+            self.cursor.execute('DROP TRIGGER IF EXISTS add_subdir')
+            self.cursor.execute('DROP TRIGGER IF EXISTS del_subdir')
+            self.cursor.execute('DROP TRIGGER IF EXISTS move_subdir')
+            self.cursor.execute('DROP TRIGGER IF EXISTS resize_dir')
+
+            # Drop indexes
+            self.cursor.execute('DROP INDEX IF EXISTS idx_files_path')
+            self.cursor.execute('DROP INDEX IF EXISTS idx_dirs_path')
+            self.cursor.execute('DROP INDEX IF EXISTS idx_files_parent')
+            self.cursor.execute('DROP INDEX IF EXISTS idx_dirs_parent')
+            self.cursor.execute('DROP INDEX IF EXISTS idx_files_shard_offset')
+            try:
+                yield
+            finally:
+                sql_dir = osp.join(osp.dirname(__file__), '../sql')
+                self.cursor.executescript(misc.read_file(f'{sql_dir}/indexes.sql'))
+                self.cursor.executescript(misc.read_file(f'{sql_dir}/triggers.sql'))
+                self._foreign_keys_enabled = True
+                if update_dirs_at_end:
+                    self.update_dirs()
+                if update_treestats_at_end:
+                    self.update_treestats()
+        else:
+            with self.no_triggers():
+                yield
+            if update_dirs_at_end:
+                self.update_dirs()
+            if update_treestats_at_end:
+                self.update_treestats()
 
     @property
     def _foreign_keys_enabled(self):
@@ -1673,6 +1846,9 @@ class Index(AbstractContextManager):
 
     @_foreign_keys_enabled.setter
     def _foreign_keys_enabled(self, value):
+        # PRAGMA foreign_keys can only be changed outside of a transaction
+        if self.conn.in_transaction:
+            self.conn.commit()
         self.cursor.execute(f"PRAGMA foreign_keys = {'ON' if value else 'OFF'}")
 
     @contextlib.contextmanager
@@ -1686,6 +1862,17 @@ class Index(AbstractContextManager):
             yield
         finally:
             self._foreign_keys_enabled = True
+
+    @contextlib.contextmanager
+    def attached_database(self, path: str, name: str = 'sourcedb', readonly: bool = True):
+        """Context manager to attach another SQLite database temporarily."""
+        mode = 'ro' if readonly else 'rw'
+        self.cursor.execute(f"ATTACH DATABASE 'file:{path}?mode={mode}' AS {name}")
+        try:
+            yield
+        finally:
+            self.conn.commit()
+            self.cursor.execute(f"DETACH DATABASE {name}")
 
     def close(self):
         """Close the index."""
@@ -1729,6 +1916,9 @@ class Fetcher:
         self.row_factory = row_factory
 
     def fetch_iter(self, query, params=(), cursor=None, bufsize=None, rowcls=None):
+        # This needs its own cursor because the results are not all fetched in this
+        # call, the user may interleave other queries before consuming all results
+        # from this generator
         cursor = self.conn.cursor() if cursor is None else cursor
         bufsize = bufsize if bufsize is not None else self.bufsize
         cursor.row_factory = rowcls.row_factory if rowcls is not None else self.row_factory

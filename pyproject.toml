@@ -49,25 +49,29 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Cython",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: POSIX :: Linux"
 ]
 
 [project.scripts]
-barecat-create = "barecat.cli:create"
-barecat-extract = "barecat.cli:extract"
-barecat-merge = "barecat.cli:merge"
-barecat-merge-symlink = "barecat.cli:merge_symlink"
-barecat-extract-single = "barecat.cli:extract_single"
-barecat-index-to-csv = "barecat.cli:index_to_csv"
-barecat-verify = "barecat.cli:verify_integrity"
-barecat-to-ncdu-json = "barecat.cli:print_ncdu_json"
-archive2barecat = "barecat.cli:archive2barecat"
-barecat2archive = "barecat.cli:barecat2archive"
-barecat-defrag = "barecat.cli:defrag"
-barecat-create-recursive = "barecat.cli:create_recursive"
-barecat-viewer = "barecat.viewerqt6:main"
-barecat-upgrade-database = "barecat.upgrade_database:main"
+barecat = "barecat.cli.main:main"
+barecat-create = "barecat.cli.legacy:create"
+barecat-extract = "barecat.cli.legacy:extract"
+barecat-merge = "barecat.cli.legacy:merge"
+barecat-merge-symlink = "barecat.cli.legacy:merge_symlink"
+barecat-extract-single = "barecat.cli.legacy:extract_single"
+barecat-index-to-csv = "barecat.cli.legacy:index_to_csv"
+barecat-verify = "barecat.cli.legacy:verify_integrity"
+barecat-to-ncdu-json = "barecat.cli.legacy:print_ncdu_json"
+archive2barecat = "barecat.cli.legacy:archive2barecat"
+barecat2archive = "barecat.cli.legacy:barecat2archive"
+barecat-defrag = "barecat.cli.legacy:defrag"
+barecat-create-recursive = "barecat.cli.legacy:create_recursive"
+barecat-upgrade-database = "barecat.maintenance.upgrade_database:main"
 
 [project.urls]
 Homepage = "https://github.com/isarandi/barecat"
@@ -87,6 +91,55 @@ package-dir = { "" = "src" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.black]
+[tool.setuptools.package-data]
+barecat = ["completions/*.bash", "completions/*.zsh", "sql/*.sql", "man/*.1"]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+lint = [
+    "ruff",
+    "pre-commit",
+]
+docs = [
+    "sphinx",
+    "sphinxcontrib-bibtex",
+    "sphinx-autoapi",
+    "sphinx-autobuild",
+    "sphinx-autodoc-typehints",
+    "sphinxcontrib-prettyspecialmethods",
+    "sphinx-autodoc-napoleon-typehints",
+    "sphinx-codeautolink",
+    "sphinx-rtd-theme",
+    "pydata-sphinx-theme",
+    "sphinxcontrib-napoleon",
+    "Cython",
+    "numpy",
+    "setuptools-scm",
+    "toml",
+]
+dev = [
+    "barecat[test,lint,docs]",
+]
+mount = [
+    "barecat-mount",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.ruff]
 line-length = 99
-skip-string-normalization = true
+target-version = "py39"
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]  # line length handled by formatter

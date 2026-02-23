@@ -1,14 +1,15 @@
-import io
 import os
 from datetime import datetime
 from enum import Flag, auto
-from typing import Union, TYPE_CHECKING, Optional
-from barecat.util import datetime_to_ns, normalize_path, ns_to_datetime
-
-if TYPE_CHECKING:
-    from barecat import BarecatEntryInfo
+from typing import Union, Optional
+from ..util.misc import datetime_to_ns, ns_to_datetime
+from ..core.paths import normalize_path
 
 SHARD_SIZE_UNLIMITED = (1 << 63) - 1  #: An extremely large integer, representing unlimited size
+
+# Schema version constants - must match sql/schema.sql
+SCHEMA_VERSION_MAJOR = 0  #: Major version - breaking changes require code upgrade
+SCHEMA_VERSION_MINOR = 3  #: Minor version - backwards compatible additions
 
 
 class BarecatEntryInfo:
@@ -68,6 +69,14 @@ class BarecatEntryInfo:
     @mtime_dt.setter
     def mtime_dt(self, dt: datetime):
         self.mtime_ns = datetime_to_ns(dt)
+
+    def isfile(self) -> bool:
+        """True if this is a file entry."""
+        return False
+
+    def isdir(self) -> bool:
+        """True if this is a directory entry."""
+        return False
 
     def update_mtime(self):
         """Update the last modification time to the current time."""
@@ -182,6 +191,9 @@ class BarecatFileInfo(BarecatEntryInfo):
         """End position of the file in the shard."""
         return self.offset + self.size
 
+    def isfile(self) -> bool:
+        return True
+
 
 class BarecatDirInfo(BarecatEntryInfo):
     """
@@ -211,7 +223,7 @@ class BarecatDirInfo(BarecatEntryInfo):
         uid: Optional[int] = None,
         gid: Optional[int] = None,
         mtime_ns: Optional[Union[int, datetime]] = None,
-        num_subdirs: Optional[bool] = None,
+        num_subdirs: Optional[int] = None,
         num_files: Optional[int] = None,
         size_tree: Optional[int] = None,
         num_files_tree: Optional[int] = None,
@@ -262,6 +274,9 @@ class BarecatDirInfo(BarecatEntryInfo):
         super().fill_from_statresult(s)
         self.num_subdirs = s.st_nlink - 2
 
+    def isdir(self) -> bool:
+        return True
+
 
 class Order(Flag):
     """Ordering specification for file and directory listings.
@@ -299,142 +314,3 @@ class Order(Flag):
         elif self & Order.RANDOM:
             return ' ORDER BY RANDOM()'
         return ''
-
-
-class FileSection(io.IOBase):
-    """File-like object representing a section of a file.
-
-    Args:
-        file: file-like object to read from or write to
-        start: start position of the section in the file
-        size: size of the section
-        readonly: whether the section should be read-only
-    """
-
-    def __init__(self, file: io.RawIOBase, start: int, size: int, readonly: bool = True):
-        self.file = file
-        self.start = start
-        self.end = start + size
-        self.position = start
-        self.readonly = readonly
-
-    def read(self, size: int = -1) -> bytes:
-        """Read a from the section, starting from the current position.
-
-        Args:
-            size: number of bytes to read, or -1 to read until the end of the section
-
-        Returns:
-            Bytes read from the section.
-        """
-        if size == -1:
-            size = self.end - self.position
-
-        size = min(size, self.end - self.position)
-        self.file.seek(self.position)
-        data = self.file.read(size)
-        self.position += len(data)
-        return data
-
-    def readinto(self, buffer: Union[bytearray, memoryview]) -> int:
-        """Read bytes into a buffer from the section, starting from the current position.
-
-        Will read up to the length of the buffer or until the end of the section.
-
-        Args:
-            buffer: destination buffer to read into
-
-        Returns:
-            Number of bytes read into the buffer.
-        """
-        size = min(len(buffer), self.end - self.position)
-        if size == 0:
-            return 0
-
-        self.file.seek(self.position)
-        num_read = self.file.readinto(buffer[:size])
-        self.position += num_read
-        return num_read
-
-    def readall(self) -> bytes:
-        """Read all remaining bytes from the section.
-
-        Returns:
-            Bytes read from the section.
-        """
-
-        return self.read()
-
-    def readable(self):
-        """Always returns True, since the section is always readable."""
-        return True
-
-    def writable(self):
-        return not self.readonly
-
-    def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
-        """Write data to the section, starting from the current position.
-
-        Args:
-            data: data to write to the section
-
-        Returns:
-            Number of bytes written to the section.
-
-        Raises:
-            PermissionError: if the section is read-only
-            EOFError: if the write would go past the end of the section
-        """
-
-        if self.readonly:
-            raise PermissionError('Cannot write to a read-only file section')
-
-        if self.position + len(data) > self.end:
-            raise EOFError('Cannot write past the end of the section')
-
-        self.file.seek(self.position)
-        n_written = self.file.write(data)
-        self.position += n_written
-        return n_written
-
-    def readline(self, size: int = -1) -> bytes:
-        size = min(size, self.end - self.position)
-        if size == -1:
-            size = self.end - self.position
-
-        self.file.seek(self.position)
-        data = self.file.readline(size)
-
-        self.position += len(data)
-        return data
-
-    def tell(self):
-        return self.position - self.start
-
-    def seek(self, offset, whence=0):
-        if whence == io.SEEK_SET:
-            new_position = self.start + offset
-        elif whence == io.SEEK_CUR:
-            new_position = self.position + offset
-        elif whence == io.SEEK_END:
-            new_position = self.end + offset
-        else:
-            raise ValueError(f"Invalid value for whence: {whence}")
-
-        if new_position < self.start or new_position > self.end:
-            raise EOFError("Seek position out of bounds")
-
-        self.position = new_position
-        return self.position - self.start
-
-    def close(self):
-        """Close the file section, this is a no-op, since the real shard file is not closed."""
-        pass
-
-    @property
-    def size(self) -> int:
-        """Size of the section in bytes."""
-        return self.end - self.start
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()

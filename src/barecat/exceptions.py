@@ -77,3 +77,16 @@ class NotEnoughSpaceBarecatError(BarecatError):
 
     def __init__(self, message: str):
         super().__init__(message)
+
+
+class FileTooLargeBarecatError(BarecatError, ValueError):
+    """Exception raised when a file exceeds the shard_size_limit.
+
+    Inherits from ValueError for backward compatibility with code that catches ValueError.
+    """
+
+    def __init__(self, size: int, shard_size_limit: int):
+        super().__init__(
+            f'File of size {size} is too large to fit into a shard '
+            f'(shard_size_limit={shard_size_limit})'
+        )

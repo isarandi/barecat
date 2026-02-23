@@ -1,10 +1,50 @@
 """Barecat is a fast random-access, mountable archive format for storing and accessing many small
- files."""
+files."""
 
+try:
+    from ._version import version as __version__
+except ImportError:
+    __version__ = "0.0.0.dev0"
+
+# Core classes
 from .core.barecat import Barecat
 from .core.index import Index
+from .core.sharder import Sharder
 
-from .cli_impl import (
+# Data types
+from .core.types import (
+    BarecatDirInfo,
+    BarecatEntryInfo,
+    BarecatFileInfo,
+    Order,
+    SHARD_SIZE_UNLIMITED,
+)
+
+# File objects
+from .io.fileobj import (
+    BarecatFileObject,
+    BarecatReadOnlyFileObject,
+    BarecatReadWriteFileObject,
+)
+
+# Codec view
+from .io.codecs import DecodedView
+
+# Exceptions
+from .exceptions import (
+    BarecatError,
+    BarecatIntegrityError,
+    DirectoryNotEmptyBarecatError,
+    FileExistsBarecatError,
+    FileNotFoundBarecatError,
+    FileTooLargeBarecatError,
+    IsADirectoryBarecatError,
+    NotADirectoryBarecatError,
+    NotEnoughSpaceBarecatError,
+)
+
+# CLI utilities (for programmatic use)
+from .cli.impl import (
     archive2barecat,
     barecat2archive,
     extract,
@@ -13,75 +53,56 @@ from .cli_impl import (
     read_index,
     write_index,
 )
-from .common import (
-    BarecatFileInfo,
-    BarecatDirInfo,
-    BarecatEntryInfo,
-    FileSection,
-    Order,
-    SHARD_SIZE_UNLIMITED,
-)
+from .cli.completions import get_completion_script
 
-from .exceptions import (
-    BarecatError,
-    BarecatIntegrityError,
-    FileExistsBarecatError,
-    FileNotFoundBarecatError,
-    IsADirectoryBarecatError,
-    NotEnoughSpaceBarecatError,
-    DirectoryNotEmptyBarecatError,
-)
+# Archive utilities
+from .util.misc import exists, remove
 
-from .threadsafe import get_cached_reader
+# Convenience API
+from ._api import get_cached_reader, open
 
-
-def open(path, mode='r', auto_codec=False, threadsafe_reader=True):
-    if mode == 'r':
-        return Barecat(path, readonly=True, threadsafe=threadsafe_reader, auto_codec=auto_codec)
-    elif mode == 'w+':
-        return Barecat(
-            path,
-            readonly=False,
-            overwrite=True,
-            exist_ok=True,
-            append_only=False,
-            auto_codec=auto_codec,
-        )
-    elif mode == 'r+':
-        return Barecat(
-            path,
-            readonly=False,
-            overwrite=False,
-            exist_ok=True,
-            append_only=False,
-            auto_codec=auto_codec,
-        )
-    elif mode == 'a+':
-        return Barecat(
-            path,
-            readonly=False,
-            overwrite=False,
-            exist_ok=True,
-            append_only=True,
-            auto_codec=auto_codec,
-        )
-    elif mode == 'ax+':
-        return Barecat(
-            path,
-            readonly=False,
-            overwrite=False,
-            exist_ok=False,
-            append_only=True,
-            auto_codec=auto_codec,
-        )
-    elif mode == 'x+':
-        return Barecat(
-            path,
-            readonly=False,
-            overwrite=False,
-            exist_ok=False,
-            append_only=False,
-            auto_codec=auto_codec,
-        )
-    else:
-        raise ValueError(f"Invalid mode: {mode}")
+__all__ = [
+    # Version
+    "__version__",
+    # Core classes
+    "Barecat",
+    "Index",
+    "Sharder",
+    # Data types
+    "BarecatDirInfo",
+    "BarecatEntryInfo",
+    "BarecatFileInfo",
+    "Order",
+    "SHARD_SIZE_UNLIMITED",
+    # File objects
+    "BarecatFileObject",
+    "BarecatReadOnlyFileObject",
+    "BarecatReadWriteFileObject",
+    # Codec view
+    "DecodedView",
+    # Exceptions
+    "BarecatError",
+    "BarecatIntegrityError",
+    "DirectoryNotEmptyBarecatError",
+    "FileExistsBarecatError",
+    "FileNotFoundBarecatError",
+    "FileTooLargeBarecatError",
+    "IsADirectoryBarecatError",
+    "NotADirectoryBarecatError",
+    "NotEnoughSpaceBarecatError",
+    # CLI utilities
+    "archive2barecat",
+    "barecat2archive",
+    "extract",
+    "merge",
+    "merge_symlink",
+    "read_index",
+    "write_index",
+    "get_completion_script",
+    # Archive utilities
+    "exists",
+    "remove",
+    # Convenience API
+    "get_cached_reader",
+    "open",
+]

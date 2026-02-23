@@ -1,0 +1,284 @@
+.TH BARECAT 1 "December 2024" "barecat" "User Commands"
+.SH NAME
+barecat \- scalable archive format for millions of files with fast random access
+.SH SYNOPSIS
+.B barecat
+.I command
+.RI [ options ]
+.RI [ arguments ]
+.SH DESCRIPTION
+.B barecat
+(bare concatenation) is a highly scalable archive format for storing many
+small files with fast random access. It stores file data in sharded blob
+files and maintains an SQLite index for O(1) lookups by path.
+.PP
+Primary use case: storing image datasets for deep learning training where
+random access is needed and network filesystems impose file count limits.
+.SH COMMANDS
+.SS "Archive Creation and Modification"
+.TP
+.B create
+Create a new archive from files and directories.
+.TP
+.B add
+Add files to an existing archive.
+.TP
+.B extract
+Extract files from an archive.
+.SS "Viewing Contents"
+.TP
+.BR list ", " ls ", " l ", " t
+List archive contents.
+.TP
+.B cat
+Print file contents to stdout.
+.TP
+.B shell
+Interactive shell for exploring archives.
+.TP
+.B browse
+Ranger-like file browser.
+.TP
+.B du
+ncdu-like disk usage viewer.
+.SS "Archive Management"
+.TP
+.B verify
+Verify archive integrity and checksums.
+.TP
+.B defrag
+Defragment archive to reclaim space from deleted files.
+.TP
+.B reshard
+Reorganize archive with a new shard size limit.
+.TP
+.B merge
+Merge multiple archives into one.
+.TP
+.B convert
+Convert between barecat and tar/zip formats.
+.SS "Utilities"
+.TP
+.B to-ncdu-json
+Export archive structure as ncdu JSON.
+.TP
+.B index-to-csv
+Export file index as CSV.
+.TP
+.B upgrade
+Upgrade index to new schema version.
+.TP
+.B completion-script
+Print shell completion script path.
+.SH OPTIONS
+.SS "barecat create [options] ARCHIVE [PATHS...]"
+.TP
+.BI \-C " DIR" ", \-\-directory=" DIR
+Change to DIR before adding files.
+.TP
+.BI \-T " FILE" ", \-\-files\-from=" FILE
+Read paths from FILE (one per line).
+.TP
+.B \-\-stdin
+Read paths from standard input.
+.TP
+.B \-\-stdin0
+Read null-separated paths from stdin.
+.TP
+.BI \-\-exclude= PATTERN
+Exclude files matching PATTERN.
+.TP
+.BI \-i " PATTERN" ", \-\-include=" PATTERN
+Only include files matching PATTERN.
+.TP
+.BI \-j " N" ", \-\-workers=" N
+Number of worker threads.
+.TP
+.BR \-f ", " \-\-force
+Overwrite existing archive.
+.TP
+.BI \-s " SIZE" ", \-\-shard\-size\-limit=" SIZE
+Maximum shard size (e.g., 1G, 500M).
+.TP
+.B \-\-physical\-order
+Add files in physical disk order (for HDDs).
+.SS "barecat add [options] ARCHIVE [PATHS...]"
+Same options as
+.BR create ,
+plus:
+.TP
+.BR \-c ", " \-\-create
+Create archive if it does not exist.
+.SS "barecat extract [options] ARCHIVE [PATHS...]"
+.TP
+.BI \-C " DIR" ", \-\-directory=" DIR
+Extract to DIR.
+.SS "barecat list [options] ARCHIVE [PATHS...]"
+.TP
+.BR \-l ", " \-\-long
+Long listing format with sizes.
+.TP
+.BR \-r ", " \-\-recursive
+List recursively.
+.SS "barecat cat ARCHIVE PATH"
+No options. Prints file contents to stdout.
+.SS "barecat shell [options] ARCHIVE"
+.TP
+.BI \-c " CMD" ", \-\-cmd=" CMD
+Execute CMD and exit.
+.TP
+.BR \-w ", " \-\-write
+Open in write mode.
+.SS "barecat verify [options] ARCHIVE"
+.TP
+.B \-\-quick
+Quick check (index only, no CRC verification).
+.SS "barecat defrag [options] ARCHIVE"
+.TP
+.B \-\-quick
+Use best-fit algorithm for faster defragmentation.
+.SS "barecat reshard \-s SIZE ARCHIVE"
+.TP
+.BI \-s " SIZE" ", \-\-shard\-size\-limit=" SIZE
+New shard size limit (required).
+.SS "barecat merge [options] \-o OUTPUT ARCHIVES..."
+.TP
+.BI \-o " OUTPUT" ", \-\-output=" OUTPUT
+Output archive path (required).
+.TP
+.BI \-s " SIZE" ", \-\-shard\-size\-limit=" SIZE
+Shard size limit for output.
+.TP
+.BR \-f ", " \-\-force
+Overwrite output if it exists.
+.TP
+.BR \-a ", " \-\-append
+Append to output if it exists.
+.TP
+.B \-\-symlink
+Create symlinks instead of copying (barecat inputs only).
+.TP
+.B \-\-ignore\-duplicates
+Skip files that already exist in output.
+.SS "barecat convert [options] INPUT OUTPUT"
+.TP
+.BI \-s " SIZE" ", \-\-shard\-size\-limit=" SIZE
+Shard size limit (tar/zip to barecat only).
+.TP
+.BR \-f ", " \-\-force
+Overwrite existing output.
+.TP
+.B \-\-stdin
+Read input from stdin (INPUT specifies format).
+.TP
+.B \-\-stdout
+Write output to stdout (OUTPUT specifies format).
+.TP
+.BI \-\-root\-dir= NAME
+Wrap files in root directory (barecat to tar).
+.TP
+.B \-\-wrap
+Zero-copy: create index over existing uncompressed tar/zip.
+.SS "barecat upgrade [options] ARCHIVE"
+.TP
+.BI \-j " N" ", \-\-workers=" N
+Number of worker threads.
+.SS "barecat completion-script SHELL"
+SHELL is
+.B bash
+or
+.BR zsh .
+.SH FILE FORMAT
+A barecat archive consists of:
+.IP \(bu 2
+.I archive.barecat
+\- SQLite database with file metadata (the archive path itself)
+.IP \(bu 2
+.IR archive.barecat-shard-00000 ", " archive.barecat-shard-00001 ", ..."
+\- Data files with concatenated contents
+.PP
+Legacy archives using
+.I archive.barecat-sqlite-index
+naming are still supported for reading.
+.SH EXAMPLES
+Create an archive:
+.PP
+.RS
+.nf
+barecat create dataset.barecat /data/images/ \-s 50G
+.fi
+.RE
+.PP
+Create from find output:
+.PP
+.RS
+.nf
+find /data \-name '*.jpg' \-print0 | barecat create \-\-stdin0 dataset.barecat
+.fi
+.RE
+.PP
+List contents:
+.PP
+.RS
+.nf
+barecat list \-lr dataset.barecat
+.fi
+.RE
+.PP
+Extract a file:
+.PP
+.RS
+.nf
+barecat cat dataset.barecat path/to/file.jpg > file.jpg
+.fi
+.RE
+.PP
+Convert from tar:
+.PP
+.RS
+.nf
+barecat convert data.tar.gz data.barecat
+.fi
+.RE
+.PP
+Merge archives:
+.PP
+.RS
+.nf
+barecat merge \-o combined.barecat archive1.barecat archive2.barecat
+.fi
+.RE
+.PP
+Set up shell completions:
+.PP
+.RS
+.nf
+source $(barecat completion\-script bash)
+.fi
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+General error.
+.TP
+.B non-zero
+Verification failure or other error.
+.SH ENVIRONMENT
+No environment variables are used.
+.SH FILES
+.TP
+.IB ~/.config/barecat/
+User configuration (if any).
+.SH SEE ALSO
+.BR tar (1),
+.BR zip (1),
+.BR sqlite3 (1)
+.PP
+Full documentation: https://barecat.readthedocs.io/
+.SH BUGS
+Report bugs at https://github.com/isarandi/barecat/issues
+.SH AUTHOR
+Written by Istvan Sarandi.

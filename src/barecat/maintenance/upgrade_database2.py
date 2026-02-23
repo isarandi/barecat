@@ -2,6 +2,7 @@ import argparse
 import os.path
 
 import barecat
+from ..core.paths import resolve_index_path
 
 
 def main():
@@ -14,17 +15,17 @@ def main():
 
 
 def upgrade_schema(path_in: str, path_out: str):
-    if os.path.exists(path_out + '-sqlite-index'):
-        raise FileExistsError(f'Output path {path_out}-sqlite-index already exists')
-    with barecat.Index(path_out + '-sqlite-index', readonly=False) as index_out:
+    # New format: path_out IS the index file
+    if os.path.exists(path_out):
+        raise FileExistsError(f'Output path {path_out} already exists')
+    # Resolve input path (could be old or new format)
+    path_in_resolved = resolve_index_path(path_in)
+    with barecat.Index(path_out, readonly=False) as index_out:
         c = index_out.cursor
         c.execute('COMMIT')
-        c.execute('PRAGMA foreign_keys=OFF')
-        c.execute('PRAGMA synchronous=OFF')
-        c.execute('PRAGMA journal_mode=OFF')
-        c.execute(f'ATTACH DATABASE "file:{path_in}-sqlite-index?mode=ro" AS source')
+        c.execute(f'ATTACH DATABASE "file:{path_in_resolved}?mode=ro" AS source')
 
-        with index_out.no_triggers(), index_out.no_foreign_keys():
+        with index_out.no_triggers():
             print('Migrating dir metadata...')
             c.execute(
                 """
@@ -57,10 +58,11 @@ def upgrade_schema(path_in: str, path_out: str):
             )
 
             c.execute(
-                f"""
+                """
                 INSERT OR REPLACE INTO config (key, value_text, value_int)
                 SELECT key, value_text, value_int
                 FROM source.config
+                WHERE key NOT LIKE 'schema_version%'
                 """
             )
 

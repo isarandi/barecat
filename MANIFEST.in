@@ -1,1 +1,4 @@
 include src/barecat/sql/*.sql
+include src/barecat/man/*.1
+include src/barecat/completions/*.bash
+include src/barecat/completions/*.zsh

@@ -2,8 +2,8 @@ import argparse
 import sys
 import tarfile
 
-import barecat.core.barecat as barecat_
-from barecat.common import BarecatDirInfo, BarecatFileInfo
+from ..core import barecat as barecat_
+from ..core.types import BarecatDirInfo, BarecatFileInfo
 
 
 def main():
