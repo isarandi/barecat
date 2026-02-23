@@ -62,34 +62,40 @@ Features
   the offsets and sizes of each file. There is no header format to understand. The index can be
   dumped into any format with simple SQL queries.
 
-Command line interface
+Command Line Interface
 ----------------------
 
-To create a Barecat archive, use the ``barecat-create`` or ``barecat-create-recursive`` commands, which
-are automatically installed executables with the pip package.
+Barecat provides a unified ``barecat`` command with subcommands:
 
 .. code-block:: bash
 
-   barecat-create --file=mydata.barecat --shard-size=100G < path_of_paths.txt
+   # Create archive from directory
+   barecat create mydata.barecat /path/to/images/
 
-   find dirname -name '*.jpg' -print0 | barecat-create --null --file=mydata.barecat --shard-size=100G
+   # Create from find output
+   find /data -name '*.jpg' -print0 | barecat create -0 mydata.barecat
 
-   barecat-create-recursive dir1 dir2 dir3 --file=mydata.barecat --shard-size=100G
+   # Extract archive
+   barecat extract mydata.barecat -C /output/
+
+   # List contents
+   barecat list -l mydata.barecat
+
+   # Interactive shell
+   barecat shell mydata.barecat
+
+   # Convert from tar/zip
+   barecat convert data.tar.gz data.barecat
 
 This may yield the following files:
 
 .. code-block:: text
 
+   mydata.barecat-shard-00000
    mydata.barecat-shard-00001
-   mydata.barecat-shard-00002
    mydata.barecat-sqlite-index
 
-The files can be extracted out again. Unix-like permissions, modification times, owner info are
-preserved.
-
-.. code-block:: bash
-
-   barecat-extract --file=mydata.barecat --target-directory=targetdir/
+See :doc:`reference/cli` for a complete command reference.
 
 Python API
 ----------
@@ -116,22 +122,44 @@ Python API
      with bc.open('path/to/file.jpg', 'rb') as f:
        data = f.read(123)
 
-Image viewer
-------------
-
-Barecat comes with a simple image viewer that can be used to browse the contents of a Barecat
-archive.
-
-.. code-block:: bash
-
-   barecat-image-viewer mydata.barecat
-
-Sitemap
--------
+Documentation
+-------------
 
 .. toctree::
-   :maxdepth: 3
-   :caption: Contents
+   :maxdepth: 2
+   :caption: Tutorials
+
+   tutorials/getting-started
+   tutorials/image-datasets
+
+.. toctree::
+   :maxdepth: 2
+   :caption: How-To Guides
+
+   howto/automatic-encoding
+   howto/convert-archives
+   howto/merge-archives
+   howto/pytorch-dataloader
+   howto/mount-fuse
+   howto/shell-completions
+   howto/verify-repair
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Reference
+
+   reference/cli
+   reference/python-api
+   reference/file-format
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Explanation
+
+   explanation/architecture
+   explanation/integrity
+   explanation/comparison
+   explanation/performance
 
 
 * :ref:`genindex`
