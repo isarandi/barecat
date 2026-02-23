@@ -16,10 +16,13 @@ from ..maintenance.defrag import BarecatDefragger
 from ..util.misc import parse_size
 from ..util.progbar import progressbar
 
+
 def create():
     warnings.warn(
         "barecat-create is deprecated, use 'barecat create' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(
         description='Concatenate files to sharded blobs and create an sqlite index.'
     )
@@ -54,7 +57,9 @@ def create():
 def create_recursive():
     warnings.warn(
         "barecat-create-recursive is deprecated, use 'barecat create' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     # args are --file, and --shard-size-limit and --workers and --overwrite, and positional args
     # are what you wanna pack in. if ya supply a single posarg thing then ya can use also the
     # flag --strip-root and then the root will be stripped from the paths
@@ -99,7 +104,9 @@ def create_recursive():
 def extract():
     warnings.warn(
         "barecat-extract is deprecated, use 'barecat extract' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(description='Extract files from a barecat archive.')
     parser.add_argument('--file', type=str, help='path to the archive file')
     parser.add_argument('--target-directory', type=str, help='path to the target directory')
@@ -110,7 +117,9 @@ def extract():
 def extract_single():
     warnings.warn(
         "barecat-extract-single is deprecated, use 'barecat cat' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(description='Extract a single file from a barecat archive.')
     parser.add_argument('--barecat-file', type=str, help='path to the archive file')
     parser.add_argument('--path', type=str, help='path to the file to extract, within the archive')
@@ -122,7 +131,9 @@ def extract_single():
 def index_to_csv():
     warnings.warn(
         "barecat-index-to-csv is deprecated, use 'barecat index-to-csv' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(description='Dump the index contents as csv')
     parser.add_argument('file', type=str, help='path to the index file')
     args = parser.parse_args()
@@ -135,9 +146,7 @@ def index_to_csv():
 
 
 def index_to_pickledict():
-    warnings.warn(
-        "barecat-index-to-pickledict is deprecated",
-        DeprecationWarning, stacklevel=2)
+    warnings.warn('barecat-index-to-pickledict is deprecated', DeprecationWarning, stacklevel=2)
     parser = argparse.ArgumentParser(description='Dump the index contents as a pickled dictionary')
     parser.add_argument('file', type=str, help='path to the index file')
     parser.add_argument('outfile', type=str, help='path to the result file')
@@ -153,7 +162,9 @@ def index_to_pickledict():
 def merge():
     warnings.warn(
         "barecat-merge is deprecated, use 'barecat merge' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(description='Merge existing Barecat archives into one.')
     parser.add_argument(
         'input_paths', metavar='N', type=str, nargs='+', help='paths to the archives to merge'
@@ -187,7 +198,9 @@ def merge():
 def merge_symlink():
     warnings.warn(
         "barecat-merge-symlink is deprecated, use 'barecat merge --symlink' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(description='Merge existing Barecat archives into one.')
     parser.add_argument(
         'input_paths', metavar='N', type=str, nargs='+', help='paths to the archives to merge'
@@ -213,7 +226,9 @@ def merge_symlink():
 def verify_integrity():
     warnings.warn(
         "barecat-verify is deprecated, use 'barecat verify' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(
         description='Verify the integrity of a Barecat archive, including CRC32C, directory '
         'stats and no gaps between stored files.'
@@ -239,9 +254,9 @@ def verify_integrity():
                 sys.exit(1)
 
 
-
 def verify_crc_parallel(bc: barecat.Barecat, workers: int):
     is_good = True
+
     def checker_main(future_iter: IterableQueue):
         for future in future_iter:
             finfo = future.userdata
@@ -258,12 +273,12 @@ def verify_crc_parallel(bc: barecat.Barecat, workers: int):
     return is_good
 
 
-
-
 def defrag():
     warnings.warn(
         "barecat-defrag is deprecated, use 'barecat defrag' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(
         description='Defragment a Barecat archive to remove gaps left by deleted files.'
     )
@@ -288,7 +303,9 @@ def defrag():
 def archive2barecat():
     warnings.warn(
         "archive2barecat is deprecated, use 'barecat convert' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(
         description='Convert a tar or zip archive to a Barecat archive.'
     )
@@ -316,7 +333,9 @@ def archive2barecat():
 def barecat2archive():
     warnings.warn(
         "barecat2archive is deprecated, use 'barecat convert' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(
         description='Convert a Barecat archive to a tar or tar or zip archive.'
     )
@@ -331,7 +350,9 @@ def barecat2archive():
 def print_ncdu_json():
     warnings.warn(
         "barecat-to-ncdu-json is deprecated, use 'barecat to-ncdu-json' instead",
-        DeprecationWarning, stacklevel=2)
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(
         description='Print the contents of a Barecat as JSON in the format expected by ncdu.'
     )

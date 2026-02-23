@@ -41,17 +41,16 @@ def upgrade_schema(path_in: str, path_out: str):
             c.execute("""
                 UPDATE dirs
                 SET (num_subdirs, num_files, num_files_tree, size_tree, mode, uid, gid, mtime_ns) =
-                    (SELECT num_subdirs, num_files, num_files_tree, size_tree, mode, uid, gid, mtime_ns 
+                    (SELECT num_subdirs, num_files, num_files_tree, size_tree, mode, uid, gid, mtime_ns
                      FROM source.dirs WHERE path = '')
                 WHERE path = ''
             """)
 
-
             print('Migrating file metadata...')
             c.execute(
-                f"""
+                """
                 INSERT INTO files (
-                    path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns) 
+                    path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
                 SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns
                 FROM source.files
                 """
@@ -67,7 +66,7 @@ def upgrade_schema(path_in: str, path_out: str):
             )
 
             index_out.conn.commit()
-            c.execute("DETACH DATABASE source")
+            c.execute('DETACH DATABASE source')
             index_out.optimize()
 
 

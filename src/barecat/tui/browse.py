@@ -1,4 +1,5 @@
 """Ranger-like terminal file browser for barecat archives."""
+
 import curses
 import os.path as osp
 from typing import Optional
@@ -104,9 +105,9 @@ class BarecatBrowser:
                             files.append(name)
                     self.preview_lines = sorted(dirs) + sorted(files)
                     if not self.preview_lines:
-                        self.preview_lines = ["[Empty directory]"]
+                        self.preview_lines = ['[Empty directory]']
                 except KeyError:
-                    self.preview_lines = ["[Cannot read directory]"]
+                    self.preview_lines = ['[Cannot read directory]']
             return
 
         # For text/binary files, load incrementally
@@ -137,7 +138,7 @@ class BarecatBrowser:
                     self.preview_lines.extend(new_lines)
                 except Exception:
                     # Binary file
-                    self.preview_lines = [f"[Binary file: {self._format_size(file_size)}]"]
+                    self.preview_lines = [f'[Binary file: {self._format_size(file_size)}]']
                     break
 
             # Add EOF marker if fully loaded
@@ -147,15 +148,15 @@ class BarecatBrowser:
                     self.preview_lines.append(f'[EOF - {self._format_size(file_size)}]')
 
         except KeyError:
-            self.preview_lines = ["[Cannot read file]"]
+            self.preview_lines = ['[Cannot read file]']
 
     def _format_size(self, size: int) -> str:
         """Format size in human-readable form."""
         for unit in ['B', 'KB', 'MB', 'GB']:
             if size < 1024:
-                return f"{size:.1f} {unit}" if unit != 'B' else f"{size} {unit}"
+                return f'{size:.1f} {unit}' if unit != 'B' else f'{size} {unit}'
             size /= 1024
-        return f"{size:.1f} TB"
+        return f'{size:.1f} TB'
 
     def _draw(self, stdscr):
         """Draw the interface."""
@@ -182,10 +183,10 @@ class BarecatBrowser:
         # Draw parent directory (left column)
         parent_entries = self._get_parent_entries()
         current_dir_name = osp.basename(self.cwd) if self.cwd else ''
-        for i, (name, is_dir) in enumerate(parent_entries[:height - 1]):
+        for i, (name, is_dir) in enumerate(parent_entries[: height - 1]):
             if i >= height - 1:
                 break
-            display = name[:col1_width - 1]
+            display = name[: col1_width - 1]
             attr = curses.A_BOLD if is_dir else 0
             if name == current_dir_name:
                 attr |= curses.A_REVERSE
@@ -203,11 +204,13 @@ class BarecatBrowser:
             self.scroll_offset = self.cursor - visible_height + 1
 
         x_offset = col1_width + 1
-        for i, (name, is_dir) in enumerate(self.entries[self.scroll_offset:self.scroll_offset + visible_height]):
+        for i, (name, is_dir) in enumerate(
+            self.entries[self.scroll_offset : self.scroll_offset + visible_height]
+        ):
             y = i
             if y >= height - 1:
                 break
-            display = name[:col2_width - 1]
+            display = name[: col2_width - 1]
             attr = curses.A_BOLD if is_dir else 0
             if i + self.scroll_offset == self.cursor:
                 attr |= curses.A_REVERSE
@@ -222,11 +225,13 @@ class BarecatBrowser:
         self._load_preview_chunk(visible_height, col3_width)
 
         preview_attr = curses.A_DIM if self.focus == 'list' else 0
-        for i, line in enumerate(self.preview_lines[self.preview_offset:self.preview_offset + visible_height]):
+        for i, line in enumerate(
+            self.preview_lines[self.preview_offset : self.preview_offset + visible_height]
+        ):
             if i >= height - 1:
                 break
             # Truncate and clean line for display
-            display_line = line.replace('\t', '    ')[:col3_width - 1]
+            display_line = line.replace('\t', '    ')[: col3_width - 1]
             display_line = ''.join(c if c.isprintable() or c == ' ' else '?' for c in display_line)
             try:
                 stdscr.addnstr(i, x_offset, display_line, col3_width - 1, preview_attr)
@@ -240,12 +245,12 @@ class BarecatBrowser:
             if selected and not self.entries[self.cursor][1]:
                 try:
                     info = self.bc.index.lookup_file(selected)
-                    status += f" | {self._format_size(info.size)}"
+                    status += f' | {self._format_size(info.size)}'
                 except KeyError:
                     pass
-        status += " | q:quit h/l:nav j/k:move"
+        status += ' | q:quit h/l:nav j/k:move'
         try:
-            stdscr.addnstr(height - 1, 0, status[:width - 1], width - 1, curses.A_REVERSE)
+            stdscr.addnstr(height - 1, 0, status[: width - 1], width - 1, curses.A_REVERSE)
         except curses.error:
             pass
 
@@ -428,6 +433,7 @@ class BarecatBrowser:
 def main():
     """Entry point for barecat-browse command."""
     import argparse
+
     parser = argparse.ArgumentParser(
         description='Browse barecat archive with ranger-like interface'
     )

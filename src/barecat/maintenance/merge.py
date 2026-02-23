@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from ..core.barecat import Barecat
 
 from ..core.paths import get_ancestors, resolve_index_path
-from ..core.types import BarecatFileInfo
 from ..io.copyfile import copy
 
 
@@ -156,20 +155,20 @@ class IndexMergeHelper:
                         f"Cannot use prefix '{prefix}': '{ancestor}' exists as a file"
                     )
         else:
-            path_expr = "path"
+            path_expr = 'path'
 
         # Source file conflicts with target directory
         conflict = self._index.fetch_one(
-            f"SELECT {path_expr} FROM sourcedb.files "
-            f"WHERE {path_expr} IN (SELECT path FROM dirs) LIMIT 1"
+            f'SELECT {path_expr} FROM sourcedb.files '
+            f'WHERE {path_expr} IN (SELECT path FROM dirs) LIMIT 1'
         )
         if conflict:
             raise ValueError(f"Source file '{conflict[0]}' conflicts with target directory")
 
         # Source directory conflicts with target file
         conflict = self._index.fetch_one(
-            f"SELECT {path_expr} FROM sourcedb.dirs "
-            f"WHERE {path_expr} IN (SELECT path FROM files) LIMIT 1"
+            f'SELECT {path_expr} FROM sourcedb.dirs '
+            f'WHERE {path_expr} IN (SELECT path FROM files) LIMIT 1'
         )
         if conflict:
             raise ValueError(f"Source directory '{conflict[0]}' conflicts with target file")
@@ -236,7 +235,7 @@ class BarecatMergeHelper:
         path_expr = index._merge_helper.check_merge_conflicts(prefix)
 
         if self._bc.shard_size_limit is not None:
-            in_max_size = index.fetch_one("SELECT MAX(size) FROM sourcedb.files")[0]
+            in_max_size = index.fetch_one('SELECT MAX(size) FROM sourcedb.files')[0]
             if in_max_size is not None and in_max_size > self._bc.shard_size_limit:
                 raise ValueError('Files in the source archive are larger than the shard size')
 
@@ -245,7 +244,7 @@ class BarecatMergeHelper:
         # Step 1: Upsert target root (prefix) with source root's stats
         # Triggers propagate size_tree/num_files_tree to ancestors of prefix
         root_stats = index.fetch_one(
-            "SELECT size_tree, num_files_tree, num_files, mode, uid, gid, mtime_ns "
+            'SELECT size_tree, num_files_tree, num_files, mode, uid, gid, mtime_ns '
             "FROM sourcedb.dirs WHERE path = ''"
         )
         index.cursor.execute(
@@ -269,7 +268,7 @@ class BarecatMergeHelper:
 
         # Step 2: Insert all source dir paths (triggers handle num_subdirs)
         index.cursor.execute(
-            f"INSERT OR IGNORE INTO dirs (path) SELECT {path_expr} FROM sourcedb.dirs"
+            f'INSERT OR IGNORE INTO dirs (path) SELECT {path_expr} FROM sourcedb.dirs'
         )
 
         # === TRIGGERS OFF ===
@@ -303,7 +302,7 @@ class BarecatMergeHelper:
             in_shard = open(in_shard_path, 'rb')
             in_shard_offset = 0
             in_shard_end = index.fetch_one(
-                "SELECT COALESCE(MAX(offset + size), 0) FROM sourcedb.files WHERE shard=?",
+                'SELECT COALESCE(MAX(offset + size), 0) FROM sourcedb.files WHERE shard=?',
                 (in_shard_number,),
             )[0]
 
@@ -320,7 +319,7 @@ class BarecatMergeHelper:
                         break
                     in_shard_offset = 0
                     in_shard_end = index.fetch_one(
-                        "SELECT COALESCE(MAX(offset + size), 0) FROM sourcedb.files WHERE shard=?",
+                        'SELECT COALESCE(MAX(offset + size), 0) FROM sourcedb.files WHERE shard=?',
                         (in_shard_number,),
                     )[0]
                     continue
@@ -370,7 +369,7 @@ class BarecatMergeHelper:
                     AND offset + size <= :in_shard_offset + :max_copiable_amount
                     """
                         if max_copiable_amount is not None
-                        else ""
+                        else ''
                     ),
                     dict(
                         out_shard_number=out_shard_number,
@@ -396,7 +395,7 @@ class BarecatMergeHelper:
                 )
                 # Recompute size_tree and num_files_tree using CTE for affected branches
                 index.cursor.execute(
-                    f"""WITH RECURSIVE
+                    """WITH RECURSIVE
                         affected_ancestors AS (
                             -- Start from parents of source files (with prefix applied)
                             SELECT CASE WHEN parent = '' THEN :prefix
@@ -464,13 +463,15 @@ class BarecatMergeHelper:
         with barecat.Barecat(source_path, readonly=True) as source:
             # Step 1: Get filtered file infos
             if pattern is not None:
-                file_infos = list(source.index.iterglob_infos(
-                    pattern, recursive=True, include_hidden=True, only_files=True
-                ))
+                file_infos = list(
+                    source.index.iterglob_infos(
+                        pattern, recursive=True, include_hidden=True, only_files=True
+                    )
+                )
             else:
-                file_infos = list(source.index.iterglob_infos_incl_excl(
-                    filter_rules, only_files=True
-                ))
+                file_infos = list(
+                    source.index.iterglob_infos_incl_excl(filter_rules, only_files=True)
+                )
 
             if not file_infos:
                 return
@@ -494,10 +495,15 @@ class BarecatMergeHelper:
                 if shard_size_limit is not None and dst_offset + fi.size > shard_size_limit:
                     # Flush current block before starting new shard
                     if block_size > 0:
-                        blocks.append((
-                            block_src_shard, block_src_offset,
-                            block_dst_shard, block_dst_offset, block_size
-                        ))
+                        blocks.append(
+                            (
+                                block_src_shard,
+                                block_src_offset,
+                                block_dst_shard,
+                                block_dst_offset,
+                                block_size,
+                            )
+                        )
                     # Start new shard
                     sharder.start_new_shard()
                     dst_shard += 1
@@ -512,17 +518,19 @@ class BarecatMergeHelper:
 
                 # Check if this file continues the current block
                 expected_src_offset = block_src_offset + block_size
-                is_contiguous = (
-                    fi.shard == block_src_shard and
-                    fi.offset == expected_src_offset
-                )
+                is_contiguous = fi.shard == block_src_shard and fi.offset == expected_src_offset
 
                 if not is_contiguous and block_size > 0:
                     # Flush current block
-                    blocks.append((
-                        block_src_shard, block_src_offset,
-                        block_dst_shard, block_dst_offset, block_size
-                    ))
+                    blocks.append(
+                        (
+                            block_src_shard,
+                            block_src_offset,
+                            block_dst_shard,
+                            block_dst_offset,
+                            block_size,
+                        )
+                    )
                     # Start new block
                     block_src_shard = fi.shard
                     block_src_offset = fi.offset
@@ -537,10 +545,15 @@ class BarecatMergeHelper:
 
             # Flush final block
             if block_size > 0:
-                blocks.append((
-                    block_src_shard, block_src_offset,
-                    block_dst_shard, block_dst_offset, block_size
-                ))
+                blocks.append(
+                    (
+                        block_src_shard,
+                        block_src_offset,
+                        block_dst_shard,
+                        block_dst_offset,
+                        block_size,
+                    )
+                )
 
             # Step 4: Copy blocks
             src_shard_files = {}  # cache open shard files
@@ -574,10 +587,19 @@ class BarecatMergeHelper:
                     new_path = f'{prefix}/{fi.path}' if fi.path else prefix
                 else:
                     new_path = fi.path
-                file_rows.append((
-                    new_path, new_shard, new_offset, fi.size, fi.crc32c,
-                    fi.mode, fi.uid, fi.gid, fi.mtime_ns
-                ))
+                file_rows.append(
+                    (
+                        new_path,
+                        new_shard,
+                        new_offset,
+                        fi.size,
+                        fi.crc32c,
+                        fi.mode,
+                        fi.uid,
+                        fi.gid,
+                        fi.mtime_ns,
+                    )
+                )
 
             index.cursor.executemany(
                 f"""INSERT {maybe_ignore} INTO files
@@ -589,5 +611,3 @@ class BarecatMergeHelper:
         # Step 6: Create ancestor directories and update stats
         index.update_dirs()
         index.update_treestats()
-
-

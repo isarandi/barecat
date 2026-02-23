@@ -1,12 +1,12 @@
 """Tests for Index class features."""
+
 import tempfile
 import os.path as osp
 
 import pytest
 
 from barecat import Barecat
-from barecat.core.index import Index
-from barecat import BarecatFileInfo, BarecatDirInfo, Order
+from barecat import BarecatDirInfo, Order
 
 
 class TestIsFileIsDir:
@@ -460,13 +460,10 @@ class TestOrder:
                 bc['a.txt'] = b'a'
                 bc['b.txt'] = b'b'
 
-                paths = list(bc.index.iterglob_paths('*', only_files=True))
+                _paths = list(bc.index.iterglob_paths('*', only_files=True))
 
                 # With ORDER.PATH
-                ordered = [
-                    info.path
-                    for info in bc.index.iter_all_fileinfos(order=Order.PATH)
-                ]
+                ordered = [info.path for info in bc.index.iter_all_fileinfos(order=Order.PATH)]
                 assert ordered == ['a.txt', 'b.txt', 'c.txt']
 
     def test_order_path_desc(self):

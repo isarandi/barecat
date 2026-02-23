@@ -1,4 +1,5 @@
 """Tests for barecat shell module."""
+
 import os
 import shutil
 import tempfile

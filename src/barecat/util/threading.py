@@ -43,6 +43,7 @@ def get_local(threadsafe: bool):
     """Return a thread-local or shared storage object depending on threadsafe flag."""
     if threadsafe:
         import multiprocessing_utils
+
         return multiprocessing_utils.local()
     return SharedLocal()
 
@@ -54,4 +55,5 @@ class SharedLocal:
     Both support arbitrary attribute access, but SharedLocal shares state across
     all threads while multiprocessing_utils.local() gives each thread its own copy.
     """
+
     pass

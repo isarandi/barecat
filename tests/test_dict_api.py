@@ -1,4 +1,5 @@
 """Tests for Barecat dict-like API."""
+
 import tempfile
 import os.path as osp
 

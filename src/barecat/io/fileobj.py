@@ -1,4 +1,5 @@
 """File object classes for Barecat archives."""
+
 from __future__ import annotations
 
 import io
@@ -110,9 +111,7 @@ class BarecatFileObjectHelper:
 
         if file_exists and not truncating:
             # Open existing file for read/write or append
-            return sharder.open_from_address(
-                finfo.shard, finfo.offset, finfo.size, mode, on_close
-            )
+            return sharder.open_from_address(finfo.shard, finfo.offset, finfo.size, mode, on_close)
         else:
             # New file or truncating existing - use a pure-spillover file object
             return BarecatReadWriteFileObject(
@@ -262,7 +261,7 @@ class BarecatReadOnlyFileObject(BarecatFileObject):
         """
 
         if offset < 0 or offset > self.size:
-            raise ValueError("Offset out of bounds")
+            raise ValueError('Offset out of bounds')
         if count is None:
             count = self.size - offset
         else:
@@ -309,10 +308,10 @@ class BarecatReadOnlyFileObject(BarecatFileObject):
         elif whence == io.SEEK_END:
             new_position = self.end + offset
         else:
-            raise ValueError(f"Invalid value for whence: {whence}")
+            raise ValueError(f'Invalid value for whence: {whence}')
 
         if new_position < self.start:
-            raise ValueError("Negative seek position")
+            raise ValueError('Negative seek position')
 
         # Allow seeking past the end (like Python file objects).
         # read() will return empty bytes when position >= end.
@@ -399,7 +398,7 @@ class BarecatReadWriteFileObject(BarecatFileObject):
             self.shard_file.seek(self.offset + self.position)
             shard_data = self.shard_file.read(shard_read_size)
             if len(shard_data) < shard_read_size:
-                raise EOFError("Unexpected end of shard file during read")
+                raise EOFError('Unexpected end of shard file during read')
 
         spillover_read_size = size - shard_read_size
 
@@ -409,7 +408,7 @@ class BarecatReadWriteFileObject(BarecatFileObject):
             self.spillover.seek(self.position + shard_read_size - self.original_size)
             spillover_data = self.spillover.read(spillover_read_size)
             if len(spillover_data) < spillover_read_size:
-                raise EOFError("Unexpected end of spillover file during read")
+                raise EOFError('Unexpected end of spillover file during read')
         self.position += size
 
         if spillover_read_size == 0:
@@ -437,7 +436,7 @@ class BarecatReadWriteFileObject(BarecatFileObject):
             self.shard_file.seek(self.offset + self.position)
             n = self.shard_file.write(data[:shard_write_size])
             if n < shard_write_size:
-                raise EOFError("Unexpected end of shard file during write")
+                raise EOFError('Unexpected end of shard file during write')
 
             self.position += n
             bytes_written += n
@@ -466,10 +465,10 @@ class BarecatReadWriteFileObject(BarecatFileObject):
         elif whence == io.SEEK_END:
             new_position = self.size + offset
         else:
-            raise ValueError(f"Invalid value for whence: {whence}")
+            raise ValueError(f'Invalid value for whence: {whence}')
 
         if new_position < 0:
-            raise ValueError("Negative seek position")
+            raise ValueError('Negative seek position')
 
         self.position = new_position
         return self.position

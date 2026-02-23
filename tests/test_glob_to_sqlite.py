@@ -3,6 +3,7 @@
 Tests that glob_to_sqlite correctly converts Python glob patterns to SQLite GLOB patterns,
 handling the differences in bracket negation syntax ([!...] vs [^...]) and literal caret handling.
 """
+
 import glob
 import itertools
 import os
@@ -152,13 +153,47 @@ def test_files_and_db():
 
     # Create a variety of test files
     files = [
-        'a', 'b', 'c', 'x', 'y', 'z', '0', '1', '9',
-        '!', '@', '#', '$', '%', '&', '-', '_', '+',
-        '[', ']', '^', '\\',
-        '[!]', '[^]', '[]', '[[', ']]',
-        '!]', '^]', '![', '^[',
-        'ab', '!a', '^a', '[a', ']a', '\\a',
-        'abc', '[!a]', '[^a]', '[ab]',
+        'a',
+        'b',
+        'c',
+        'x',
+        'y',
+        'z',
+        '0',
+        '1',
+        '9',
+        '!',
+        '@',
+        '#',
+        '$',
+        '%',
+        '&',
+        '-',
+        '_',
+        '+',
+        '[',
+        ']',
+        '^',
+        '\\',
+        '[!]',
+        '[^]',
+        '[]',
+        '[[',
+        ']]',
+        '!]',
+        '^]',
+        '![',
+        '^[',
+        'ab',
+        '!a',
+        '^a',
+        '[a',
+        ']a',
+        '\\a',
+        'abc',
+        '[!a]',
+        '[^a]',
+        '[ab]',
     ]
 
     created_files = []
@@ -189,30 +224,57 @@ class TestGlobToSqliteAgainstPythonGlob:
         tmpdir, conn, files = test_files_and_db
 
         patterns = [
-            '[!a]', '[!ab]', '[!abc]',
-            '[!]]', '[!]a]', '[!]ab]', '[!][^]',
+            '[!a]',
+            '[!ab]',
+            '[!abc]',
+            '[!]]',
+            '[!]a]',
+            '[!]ab]',
+            '[!][^]',
             '[!]',
-            '[^]', '[^a]', '[^ab]', '[^^]', '[^^^]', '[^^a]',
-            '[^]]', '[^]a]',
-            '[!^]', '[^!]', '[!^a]', '[^!a]',
-            '[a][b]', '[!a][b]', '[a][!b]', '[!a][!b]',
-            '[abc', '[!abc', 'a[b',
-            '[\\]', '[!\\]', '[^\\]',
-            '[!!]', '[!^!]', '[^!^]',
-            '[a-z]', '[!a-z]',
+            '[^]',
+            '[^a]',
+            '[^ab]',
+            '[^^]',
+            '[^^^]',
+            '[^^a]',
+            '[^]]',
+            '[^]a]',
+            '[!^]',
+            '[^!]',
+            '[!^a]',
+            '[^!a]',
+            '[a][b]',
+            '[!a][b]',
+            '[a][!b]',
+            '[!a][!b]',
+            '[abc',
+            '[!abc',
+            'a[b',
+            '[\\]',
+            '[!\\]',
+            '[^\\]',
+            '[!!]',
+            '[!^!]',
+            '[^!^]',
+            '[a-z]',
+            '[!a-z]',
         ]
 
         for pattern in patterns:
             py_result = sorted(glob.glob(pattern))
             sqlite_pattern = glob_to_sqlite(pattern)
-            sq_result = sorted([
-                r[0] for r in conn.execute(
-                    'SELECT name FROM t WHERE name GLOB ?', (sqlite_pattern,)
-                )
-            ])
+            sq_result = sorted(
+                [
+                    r[0]
+                    for r in conn.execute(
+                        'SELECT name FROM t WHERE name GLOB ?', (sqlite_pattern,)
+                    )
+                ]
+            )
             assert py_result == sq_result, (
-                f"Pattern {pattern!r} -> {sqlite_pattern!r}: "
-                f"Python={py_result}, SQLite={sq_result}"
+                f'Pattern {pattern!r} -> {sqlite_pattern!r}: '
+                f'Python={py_result}, SQLite={sq_result}'
             )
 
     def test_random_patterns(self, test_files_and_db):
@@ -228,14 +290,17 @@ class TestGlobToSqliteAgainstPythonGlob:
 
             py_result = sorted(glob.glob(pattern))
             sqlite_pattern = glob_to_sqlite(pattern)
-            sq_result = sorted([
-                r[0] for r in conn.execute(
-                    'SELECT name FROM t WHERE name GLOB ?', (sqlite_pattern,)
-                )
-            ])
+            sq_result = sorted(
+                [
+                    r[0]
+                    for r in conn.execute(
+                        'SELECT name FROM t WHERE name GLOB ?', (sqlite_pattern,)
+                    )
+                ]
+            )
             assert py_result == sq_result, (
-                f"Pattern {pattern!r} -> {sqlite_pattern!r}: "
-                f"Python={py_result}, SQLite={sq_result}"
+                f'Pattern {pattern!r} -> {sqlite_pattern!r}: '
+                f'Python={py_result}, SQLite={sq_result}'
             )
 
     def test_concatenated_patterns(self, test_files_and_db):
@@ -243,28 +308,39 @@ class TestGlobToSqliteAgainstPythonGlob:
         tmpdir, conn, files = test_files_and_db
 
         base_patterns = [
-            '[!]', '[^]', '[!a]', '[^a]', '[!ab]', '[^ab]',
-            '[!]]', '[^]]', '[a]', '[ab]', 'a', 'ab',
+            '[!]',
+            '[^]',
+            '[!a]',
+            '[^a]',
+            '[!ab]',
+            '[^ab]',
+            '[!]]',
+            '[^]]',
+            '[a]',
+            '[ab]',
+            'a',
+            'ab',
         ]
 
         random.seed(123)
         concat_patterns = []
-        for p1, p2 in random.sample(
-            list(itertools.product(base_patterns, base_patterns)), 50
-        ):
+        for p1, p2 in random.sample(list(itertools.product(base_patterns, base_patterns)), 50):
             concat_patterns.append(p1 + p2)
 
         for pattern in concat_patterns:
             py_result = sorted(glob.glob(pattern))
             sqlite_pattern = glob_to_sqlite(pattern)
-            sq_result = sorted([
-                r[0] for r in conn.execute(
-                    'SELECT name FROM t WHERE name GLOB ?', (sqlite_pattern,)
-                )
-            ])
+            sq_result = sorted(
+                [
+                    r[0]
+                    for r in conn.execute(
+                        'SELECT name FROM t WHERE name GLOB ?', (sqlite_pattern,)
+                    )
+                ]
+            )
             assert py_result == sq_result, (
-                f"Pattern {pattern!r} -> {sqlite_pattern!r}: "
-                f"Python={py_result}, SQLite={sq_result}"
+                f'Pattern {pattern!r} -> {sqlite_pattern!r}: '
+                f'Python={py_result}, SQLite={sq_result}'
             )
 
     def test_patterns_with_wildcards(self, test_files_and_db):
@@ -272,21 +348,37 @@ class TestGlobToSqliteAgainstPythonGlob:
         tmpdir, conn, files = test_files_and_db
 
         patterns = [
-            '*', '?', '??', 'a*', '*a', '?a', 'a?',
-            '[!a]*', '*[!a]', '[^a]*', '*[^a]',
-            '[!a]?', '?[!a]', '[^a]?', '?[^a]',
-            '*[!ab]*', '?[^ab]?',
+            '*',
+            '?',
+            '??',
+            'a*',
+            '*a',
+            '?a',
+            'a?',
+            '[!a]*',
+            '*[!a]',
+            '[^a]*',
+            '*[^a]',
+            '[!a]?',
+            '?[!a]',
+            '[^a]?',
+            '?[^a]',
+            '*[!ab]*',
+            '?[^ab]?',
         ]
 
         for pattern in patterns:
             py_result = sorted(glob.glob(pattern))
             sqlite_pattern = glob_to_sqlite(pattern)
-            sq_result = sorted([
-                r[0] for r in conn.execute(
-                    'SELECT name FROM t WHERE name GLOB ?', (sqlite_pattern,)
-                )
-            ])
+            sq_result = sorted(
+                [
+                    r[0]
+                    for r in conn.execute(
+                        'SELECT name FROM t WHERE name GLOB ?', (sqlite_pattern,)
+                    )
+                ]
+            )
             assert py_result == sq_result, (
-                f"Pattern {pattern!r} -> {sqlite_pattern!r}: "
-                f"Python={py_result}, SQLite={sq_result}"
+                f'Pattern {pattern!r} -> {sqlite_pattern!r}: '
+                f'Python={py_result}, SQLite={sq_result}'
             )

@@ -1,10 +1,10 @@
 """Property-based tests for glob_to_regex module using Hypothesis."""
+
 import fnmatch
 import re
 import sqlite3
 
-import pytest
-from hypothesis import given, strategies as st, assume, settings
+from hypothesis import given, strategies as st, assume
 
 from barecat.util.glob_to_regex import glob_to_regex, glob_to_sqlite, expand_doublestar
 
@@ -34,6 +34,7 @@ path_pattern = st.lists(path_segment, min_size=1, max_size=5).map('/'.join)
 # =============================================================================
 # Tests for glob_to_regex
 # =============================================================================
+
 
 class TestGlobToRegexNoCrash:
     """Ensure glob_to_regex never crashes on any input."""
@@ -69,20 +70,20 @@ class TestGlobToRegexLiterals:
     def test_literal_matches_itself(self, s):
         """A pattern with no wildcards should match exactly itself."""
         regex = glob_to_regex(s)
-        assert re.fullmatch(regex, s), f"Pattern {s!r} should match itself"
+        assert re.fullmatch(regex, s), f'Pattern {s!r} should match itself'
 
     @given(literal_pattern, literal_pattern)
     def test_literal_doesnt_match_other(self, s1, s2):
         """A literal pattern should not match a different string."""
         assume(s1 != s2)
         regex = glob_to_regex(s1)
-        assert not re.fullmatch(regex, s2), f"Pattern {s1!r} should not match {s2!r}"
+        assert not re.fullmatch(regex, s2), f'Pattern {s1!r} should not match {s2!r}'
 
     @given(path_pattern)
     def test_path_literal_matches_itself(self, path):
         """A literal path pattern should match itself."""
         regex = glob_to_regex(path)
-        assert re.fullmatch(regex, path), f"Path {path!r} should match itself"
+        assert re.fullmatch(regex, path), f'Path {path!r} should match itself'
 
 
 class TestGlobToRegexWildcards:
@@ -194,10 +195,11 @@ class TestGlobToRegexHidden:
 # Tests for glob_to_sqlite
 # =============================================================================
 
+
 def sqlite_glob_matches(pattern, text):
     """Check if SQLite GLOB matches the given text."""
     conn = sqlite3.connect(':memory:')
-    cursor = conn.execute("SELECT ? GLOB ?", (text, pattern))
+    cursor = conn.execute('SELECT ? GLOB ?', (text, pattern))
     result = cursor.fetchone()[0]
     conn.close()
     return bool(result)
@@ -244,9 +246,9 @@ class TestGlobToSqlite:
 
         # SQLite should match at least what Python matches
         if python_matches:
-            assert sqlite_matches, (
-                f"Python matched {test_char!r} with {pattern!r} but SQLite didn't"
-            )
+            assert (
+                sqlite_matches
+            ), f"Python matched {test_char!r} with {pattern!r} but SQLite didn't"
 
     @given(
         st.text(alphabet='abc', min_size=1, max_size=3),
@@ -263,8 +265,8 @@ class TestGlobToSqlite:
 
         # For character classes, should be exact match
         assert python_matches == sqlite_matches, (
-            f"Mismatch for pattern={pattern!r}, char={test_char!r}: "
-            f"Python={python_matches}, SQLite={sqlite_matches}"
+            f'Mismatch for pattern={pattern!r}, char={test_char!r}: '
+            f'Python={python_matches}, SQLite={sqlite_matches}'
         )
 
     @given(path_pattern, path_pattern)
@@ -281,14 +283,13 @@ class TestGlobToSqlite:
 
         # If Python matches, SQLite must also match
         if python_matches:
-            assert sqlite_matches, (
-                f"Python matched {path!r} with {pattern!r} but SQLite didn't"
-            )
+            assert sqlite_matches, f"Python matched {path!r} with {pattern!r} but SQLite didn't"
 
 
 # =============================================================================
 # Tests for expand_doublestar
 # =============================================================================
+
 
 class TestExpandDoublestar:
     """Test expand_doublestar behavior."""
@@ -338,6 +339,7 @@ class TestExpandDoublestar:
 # Cross-validation with fnmatch
 # =============================================================================
 
+
 class TestCrossValidation:
     """Cross-validate glob_to_regex against fnmatch."""
 
@@ -354,9 +356,9 @@ class TestCrossValidation:
         regex = glob_to_regex(pattern)
         our_result = bool(re.fullmatch(regex, test_str))
 
-        assert our_result == fnmatch_result, (
-            f"Mismatch for pattern={pattern!r}, string={test_str!r}"
-        )
+        assert (
+            our_result == fnmatch_result
+        ), f'Mismatch for pattern={pattern!r}, string={test_str!r}'
 
     @given(
         st.text(alphabet='abc', min_size=1, max_size=3),
@@ -378,6 +380,7 @@ class TestCrossValidation:
 # =============================================================================
 # Regression tests (placeholder for bugs found by Hypothesis)
 # =============================================================================
+
 
 class TestRegressions:
     """Tests for specific bugs found by Hypothesis or users."""

@@ -24,6 +24,7 @@ class Sharder(AbstractContextManager):
         allow_writing_symlinked_shard=False,
     ):
         import os
+
         path = os.fspath(path)
         self.path = path
         self.readonly = readonly
@@ -194,7 +195,7 @@ class Sharder(AbstractContextManager):
                 raise FileTooLargeBarecatError(size, self.shard_size_limit)
             if offset + size > self.shard_size_limit:
                 if raise_if_cannot_fit:
-                    raise ValueError(f'File does not fit in the shard')
+                    raise ValueError('File does not fit in the shard')
                 shard_file = self.start_new_shard()
                 offset_real = 0
                 shard_real = self.num_shards - 1
@@ -214,7 +215,6 @@ class Sharder(AbstractContextManager):
 
         if offset_real + size_real > self.shard_size_limit:
             if raise_if_cannot_fit:
-
                 raise ValueError('File does not fit in the shard')
             self.start_new_shard_and_transfer_last_file(offset_real, size_real)
             offset_real = 0

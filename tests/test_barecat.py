@@ -29,7 +29,7 @@ def test_barecat():
         assert bc['some/path.txt'] == b'hello world'
         del bc['some/path.txt']
         with pytest.raises(KeyError):
-            a = bc['some/path.txt']
+            bc['some/path.txt']
 
     with barecat.Barecat(filepath, readonly=False, overwrite=True) as bc:
         bc['some/path.txt'] = b'hello world'
@@ -70,4 +70,3 @@ def test_barecat():
     with Barecat(filepath, readonly=True) as bc:
         assert bc['file.txt'] == b'Hello, world!'
         assert bc.listdir('dir') == []
-

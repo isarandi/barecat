@@ -70,8 +70,8 @@ class TestPositionSemantics:
             n = copyfile.copy(src, dst, 11)  # "hello world"
 
             assert n == 11
-            assert src.tell() == 11, "Source position should advance"
-            assert dst.tell() == 11, "Dest position should advance"
+            assert src.tell() == 11, 'Source position should advance'
+            assert dst.tell() == 11, 'Dest position should advance'
 
     def test_position_based_from_middle(self, temp_files):
         """Position-based copy from middle of file."""
@@ -101,8 +101,8 @@ class TestPositionSemantics:
             n = copyfile.copy(src, dst, 5, src_offset=6)  # Read "world" from offset 6
 
             assert n == 5
-            assert src.tell() == 3, "Source position should NOT change with explicit offset"
-            assert dst.tell() == 5, "Dest position should advance (no dst_offset given)"
+            assert src.tell() == 3, 'Source position should NOT change with explicit offset'
+            assert dst.tell() == 5, 'Dest position should advance (no dst_offset given)'
 
         with open(dst_path, 'rb') as f:
             assert f.read(5) == b'world'
@@ -118,8 +118,8 @@ class TestPositionSemantics:
             n = copyfile.copy(src, dst, 5, dst_offset=10)  # Write at offset 10
 
             assert n == 5
-            assert src.tell() == 5, "Source position should advance (no src_offset given)"
-            assert dst.tell() == 3, "Dest position should NOT change with explicit offset"
+            assert src.tell() == 5, 'Source position should advance (no src_offset given)'
+            assert dst.tell() == 3, 'Dest position should NOT change with explicit offset'
 
         with open(dst_path, 'rb') as f:
             f.seek(10)
@@ -136,8 +136,8 @@ class TestPositionSemantics:
             n = copyfile.copy(src, dst, 5, src_offset=6, dst_offset=0)
 
             assert n == 5
-            assert src.tell() == 2, "Source position should NOT change"
-            assert dst.tell() == 3, "Dest position should NOT change"
+            assert src.tell() == 2, 'Source position should NOT change'
+            assert dst.tell() == 3, 'Dest position should NOT change'
 
         with open(dst_path, 'rb') as f:
             assert f.read(5) == b'world'
@@ -205,7 +205,7 @@ class TestAccumulateCrc32c:
         src_path, _ = temp_files
 
         with open(src_path, 'rb') as f:
-            crc = copyfile.accumulate_crc32c(f, size=5)
+            _crc = copyfile.accumulate_crc32c(f, size=5)
             assert f.tell() == 5
 
     def test_offset_based_seeks_and_advances(self, temp_files):
@@ -214,7 +214,7 @@ class TestAccumulateCrc32c:
 
         with open(src_path, 'rb') as f:
             f.seek(100)  # Arbitrary position
-            crc = copyfile.accumulate_crc32c(f, size=5, offset=6)
+            _crc = copyfile.accumulate_crc32c(f, size=5, offset=6)
             # After seeking to 6 and reading 5, position is 11
             assert f.tell() == 11
 
@@ -245,7 +245,7 @@ class TestCodePathSelection:
         _, dst_path = temp_files
 
         if not copyfile._HAS_SPLICE:
-            pytest.skip("splice not available")
+            pytest.skip('splice not available')
 
         r_fd, w_fd = os.pipe()
         try:
@@ -267,7 +267,7 @@ class TestCodePathSelection:
                     mock_splice.assert_called()
 
             t.join()
-        except:
+        except Exception:
             os.close(r_fd)
             os.close(w_fd)
             raise
@@ -277,7 +277,7 @@ class TestCodePathSelection:
         src_path, _ = temp_files
 
         if not copyfile._HAS_SPLICE:
-            pytest.skip("splice not available")
+            pytest.skip('splice not available')
 
         r_fd, w_fd = os.pipe()
         try:
@@ -302,14 +302,14 @@ class TestCodePathSelection:
 
             t.join()
             assert result[0] == b'hello worl'
-        except:
+        except Exception:
             try:
                 os.close(r_fd)
-            except:
+            except Exception:
                 pass
             try:
                 os.close(w_fd)
-            except:
+            except Exception:
                 pass
             raise
 
@@ -333,9 +333,7 @@ class TestCodePathSelection:
 
         with open(src_path, 'rb') as src, open(dst_path, 'r+b') as dst:
             # copy_crc32c should NOT use kernel copy methods
-            with mock.patch.object(
-                copyfile, '_copy_file_range_loop'
-            ) as mock_kernel:
+            with mock.patch.object(copyfile, '_copy_file_range_loop') as mock_kernel:
                 n, crc = copyfile.copy_crc32c(src, dst, 10)
                 assert n == 10
                 mock_kernel.assert_not_called()
@@ -655,8 +653,8 @@ class TestNonSeekableStreams:
         n = copyfile.copy(src, dst, 11)
 
         assert n == 11
-        assert src.tell() == 11, "BytesIO src position should advance"
-        assert dst.tell() == 11, "BytesIO dst position should advance"
+        assert src.tell() == 11, 'BytesIO src position should advance'
+        assert dst.tell() == 11, 'BytesIO dst position should advance'
         assert dst.getvalue() == b'hello world'
 
     def test_bytesio_offset_based(self):
@@ -670,8 +668,8 @@ class TestNonSeekableStreams:
         n = copyfile.copy(src, dst, 5, src_offset=6, dst_offset=10)
 
         assert n == 5
-        assert src.tell() == 3, "BytesIO src position should NOT change with offset"
-        assert dst.tell() == 5, "BytesIO dst position should NOT change with offset"
+        assert src.tell() == 3, 'BytesIO src position should NOT change with offset'
+        assert dst.tell() == 5, 'BytesIO dst position should NOT change with offset'
         assert dst.getvalue()[10:15] == b'world'
 
     def test_bytesio_size_none(self):
@@ -697,18 +695,20 @@ class TestNonSeekableStreams:
 
     def test_tar_stream_like_non_seekable(self):
         """Test with a non-seekable stream wrapper."""
+
         class NonSeekableWrapper:
             """Wrapper that makes a file non-seekable (like tar ExFileObject)."""
+
             def __init__(self, data):
                 self._data = data
                 self._pos = 0
 
             def read(self, n=-1):
                 if n == -1:
-                    result = self._data[self._pos:]
+                    result = self._data[self._pos :]
                     self._pos = len(self._data)
                 else:
-                    result = self._data[self._pos:self._pos + n]
+                    result = self._data[self._pos : self._pos + n]
                     self._pos += len(result)
                 return result
 
@@ -728,6 +728,7 @@ class TestNonSeekableStreams:
 
     def test_tar_stream_size_none(self):
         """Non-seekable stream with size=None should copy until EOF."""
+
         class NonSeekableWrapper:
             def __init__(self, data):
                 self._data = data
@@ -735,10 +736,10 @@ class TestNonSeekableStreams:
 
             def read(self, n=-1):
                 if n == -1:
-                    result = self._data[self._pos:]
+                    result = self._data[self._pos :]
                     self._pos = len(self._data)
                 else:
-                    result = self._data[self._pos:self._pos + n]
+                    result = self._data[self._pos : self._pos + n]
                     self._pos += len(result)
                 return result
 
@@ -746,7 +747,7 @@ class TestNonSeekableStreams:
                 return False
 
             def fileno(self):
-                raise io.UnsupportedOperation("no fileno")
+                raise io.UnsupportedOperation('no fileno')
 
         src = NonSeekableWrapper(b'hello world')
         dst = io.BytesIO()
@@ -818,7 +819,7 @@ class TestCodePathVerification:
         src_path, dst_path = temp_files
 
         if not copyfile._HAS_COPY_FILE_RANGE:
-            pytest.skip("copy_file_range not available")
+            pytest.skip('copy_file_range not available')
 
         with open(src_path, 'rb') as src, open(dst_path, 'r+b') as dst:
             used_kernel = [False]
@@ -832,13 +833,13 @@ class TestCodePathVerification:
 
             # Block buffered fallback to ensure kernel method is used
             def fail_buffered(ctx, **kw):
-                raise AssertionError("Should not fall back to buffered")
+                raise AssertionError('Should not fall back to buffered')
 
             with mock.patch.object(copyfile, '_copy_file_range_loop', track_cfr):
                 with mock.patch.object(copyfile, '_copy_buffered', fail_buffered):
                     n = copyfile.copy(src, dst, 10)
 
-            assert used_kernel[0], "copy_file_range should have been used"
+            assert used_kernel[0], 'copy_file_range should have been used'
             assert n == 10
 
         # Verify data integrity
@@ -848,7 +849,7 @@ class TestCodePathVerification:
     def test_splice_actually_works_pipe_to_file(self, temp_files):
         """Verify splice actually works for pipe→file."""
         if not copyfile._HAS_SPLICE:
-            pytest.skip("splice not available")
+            pytest.skip('splice not available')
 
         _, dst_path = temp_files
 
@@ -872,7 +873,7 @@ class TestCodePathVerification:
                 with mock.patch.object(copyfile, '_copy_splice', track_splice):
                     n = copyfile.copy(pipe_in, dst, 16)
 
-                assert used_splice[0], "splice should have been used"
+                assert used_splice[0], 'splice should have been used'
                 assert n == 16
 
             with open(dst_path, 'rb') as f:
@@ -886,7 +887,7 @@ class TestCodePathVerification:
     def test_splice_actually_works_file_to_pipe(self, temp_files):
         """Verify splice actually works for file→pipe."""
         if not copyfile._HAS_SPLICE:
-            pytest.skip("splice not available")
+            pytest.skip('splice not available')
 
         src_path, _ = temp_files
 
@@ -915,7 +916,7 @@ class TestCodePathVerification:
                 with mock.patch.object(copyfile, '_copy_splice', track_splice):
                     n = copyfile.copy(src, pipe_out, 10)
 
-                assert used_splice[0], "splice should have been used"
+                assert used_splice[0], 'splice should have been used'
                 assert n == 10
 
             t.join(timeout=2)
@@ -943,13 +944,13 @@ class TestCodePathVerification:
 
         # Ensure kernel methods would fail if called
         def fail_kernel(ctx):
-            raise AssertionError("Should not try kernel copy for BytesIO")
+            raise AssertionError('Should not try kernel copy for BytesIO')
 
         with mock.patch.object(copyfile, '_copy_file_range_loop', fail_kernel):
             with mock.patch.object(copyfile, '_copy_buffered', track_buf):
                 n = copyfile.copy(src, dst, 18)
 
-        assert used_buffered[0], "buffered copy should have been used"
+        assert used_buffered[0], 'buffered copy should have been used'
         assert n == 18
         assert dst.getvalue() == b'buffered copy test'
 
@@ -962,11 +963,11 @@ class TestCodePathVerification:
 
             def track_cfr(ctx):
                 call_log.append('copy_file_range')
-                raise AssertionError("copy_file_range should not be called for CRC")
+                raise AssertionError('copy_file_range should not be called for CRC')
 
             def track_splice(ctx):
                 call_log.append('splice')
-                raise AssertionError("splice should not be called for CRC")
+                raise AssertionError('splice should not be called for CRC')
 
             with mock.patch.object(copyfile, '_copy_file_range_loop', track_cfr):
                 with mock.patch.object(copyfile, '_copy_splice', track_splice):
@@ -986,8 +987,7 @@ class TestCodePathVerification:
         try:
             with open(path, 'r+b') as f:
                 with mock.patch.object(
-                    copyfile, '_copy_same_file_overlap',
-                    wraps=copyfile._copy_same_file_overlap
+                    copyfile, '_copy_same_file_overlap', wraps=copyfile._copy_same_file_overlap
                 ) as m:
                     # Backward overlap
                     copyfile.copy(f, f, 5, src_offset=5, dst_offset=2)
@@ -1004,12 +1004,15 @@ class TestCodePathVerification:
 
         def track_cfr(ctx):
             call_log.append('copy_file_range')
-            raise AssertionError("Should not use copy_file_range for BytesIO")
+            raise AssertionError('Should not use copy_file_range for BytesIO')
 
         def track_buf(ctx, **kw):
             call_log.append('buffered')
-            return copyfile._copy_buffered.__wrapped__(ctx, **kw) if hasattr(
-                copyfile._copy_buffered, '__wrapped__') else 11
+            return (
+                copyfile._copy_buffered.__wrapped__(ctx, **kw)
+                if hasattr(copyfile._copy_buffered, '__wrapped__')
+                else 11
+            )
 
         with mock.patch.object(copyfile, '_copy_file_range_loop', track_cfr):
             copyfile.copy(src, dst, 11)
@@ -1022,7 +1025,7 @@ class TestCodePathVerification:
         import socket
 
         if not copyfile._HAS_SENDFILE:
-            pytest.skip("sendfile not available")
+            pytest.skip('sendfile not available')
 
         src_path, _ = temp_files
 
@@ -1048,13 +1051,13 @@ class TestCodePathVerification:
 
                 # Block fallback to ensure sendfile is used
                 def fail_buffered(ctx, **kw):
-                    raise AssertionError("Should not fall back to buffered")
+                    raise AssertionError('Should not fall back to buffered')
 
                 with mock.patch.object(copyfile, '_copy_sendfile', track_sendfile):
                     with mock.patch.object(copyfile, '_copy_buffered', fail_buffered):
                         n = copyfile.copy(src, server_sock.makefile('wb', buffering=0), 10)
 
-                assert used_sendfile[0], "sendfile should have been used"
+                assert used_sendfile[0], 'sendfile should have been used'
                 assert n == 10
 
             server_sock.close()
@@ -1078,8 +1081,8 @@ class TestMixedPositionOffsetSemantics:
             n = copyfile.copy(src, dst, 5, dst_offset=10)
 
             assert n == 5
-            assert src.tell() == 5, "src should advance (position-based)"
-            assert dst.tell() == 5, "dst should NOT advance (offset-based)"
+            assert src.tell() == 5, 'src should advance (position-based)'
+            assert dst.tell() == 5, 'dst should NOT advance (offset-based)'
 
     def test_src_offset_dst_position(self, temp_files):
         """src offset-based, dst position-based."""
@@ -1092,8 +1095,8 @@ class TestMixedPositionOffsetSemantics:
             n = copyfile.copy(src, dst, 5, src_offset=6)
 
             assert n == 5
-            assert src.tell() == 3, "src should NOT advance (offset-based)"
-            assert dst.tell() == 5, "dst should advance (position-based)"
+            assert src.tell() == 3, 'src should NOT advance (offset-based)'
+            assert dst.tell() == 5, 'dst should advance (position-based)'
 
     def test_position_position_from_middle(self, temp_files):
         """Both position-based from middle of files."""
@@ -1120,8 +1123,8 @@ class TestMixedPositionOffsetSemantics:
             n = copyfile.copy(src, dst, 5, src_offset=0, dst_offset=0)
 
             assert n == 5
-            assert src.tell() == 1, "src position unchanged"
-            assert dst.tell() == 2, "dst position unchanged"
+            assert src.tell() == 1, 'src position unchanged'
+            assert dst.tell() == 2, 'dst position unchanged'
 
 
 class TestDataIntegrity:

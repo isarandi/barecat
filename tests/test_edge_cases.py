@@ -1,14 +1,12 @@
 """Edge case tests for barecat - weird inputs and boundary conditions."""
 
-import os
 import shutil
 import tempfile
 import os.path as osp
 
 import pytest
 
-import barecat
-from barecat import Barecat, BarecatError, IsADirectoryBarecatError, NotADirectoryBarecatError
+from barecat import Barecat, BarecatError, IsADirectoryBarecatError
 
 
 @pytest.fixture
@@ -23,6 +21,7 @@ def archive():
 # =============================================================================
 # Empty and minimal content
 # =============================================================================
+
 
 def test_empty_file(archive):
     """Zero-byte files should work."""
@@ -71,6 +70,7 @@ def test_single_file_at_root(archive):
 # =============================================================================
 # Path edge cases
 # =============================================================================
+
 
 def test_path_normalization_leading_slash(archive):
     """Leading slashes should be stripped."""
@@ -229,6 +229,7 @@ def test_special_characters_in_path(archive):
 # Binary content edge cases
 # =============================================================================
 
+
 def test_binary_content_all_bytes(archive):
     """Content containing all possible byte values."""
     all_bytes = bytes(range(256))
@@ -265,6 +266,7 @@ def test_content_looks_like_path(archive):
 # =============================================================================
 # Overwrite and delete edge cases
 # =============================================================================
+
 
 def test_replace_with_smaller(archive):
     """Replace file with smaller content via delete+add."""
@@ -374,6 +376,7 @@ def test_delete_last_file_in_dir(archive):
 # Directory edge cases
 # =============================================================================
 
+
 def test_empty_directory_explicit(archive):
     """Explicitly created empty directory via add()."""
     from barecat import BarecatDirInfo
@@ -445,6 +448,7 @@ def test_directory_vs_file_same_name_prefix(archive):
 # Read operations edge cases
 # =============================================================================
 
+
 def test_read_nonexistent_raises_keyerror(archive):
     """Reading non-existent file raises KeyError."""
     with Barecat(archive, readonly=False) as bc:
@@ -497,6 +501,7 @@ def test_listdir_nonexistent_raises(archive):
 # =============================================================================
 # File handle edge cases
 # =============================================================================
+
 
 def test_seek_beyond_end_allowed(archive):
     """Seeking beyond file end is allowed (like Python file objects).
@@ -552,6 +557,7 @@ def test_multiple_reads(archive):
 # Concurrent/multiple file edge cases
 # =============================================================================
 
+
 def test_same_content_different_files(archive):
     """Multiple files with identical content."""
     content = b'duplicate content'
@@ -590,6 +596,7 @@ def test_interleaved_operations(archive):
 # Integrity and verification
 # =============================================================================
 
+
 def test_crc_stored_correctly(archive):
     """CRC32C should be stored and verifiable."""
     import crc32c
@@ -620,6 +627,7 @@ def test_verify_integrity_clean_archive(archive):
 # Mode and permission edge cases
 # =============================================================================
 
+
 def test_readonly_prevents_write(archive):
     """Readonly mode should prevent writes."""
     with Barecat(archive, readonly=False) as bc:
@@ -647,6 +655,7 @@ def test_reopen_after_close(archive):
 # =============================================================================
 # Walk edge cases
 # =============================================================================
+
 
 def test_walk_empty_archive(archive):
     """Walk on empty archive."""
@@ -691,6 +700,7 @@ def test_walk_complex_structure(archive):
 # Keys/items/values iteration
 # =============================================================================
 
+
 def test_keys_iteration(archive):
     """Iterating over keys."""
     with Barecat(archive, readonly=False) as bc:
@@ -730,6 +740,7 @@ def test_len_count(archive):
 # =============================================================================
 # Rename operations
 # =============================================================================
+
 
 def test_rename_file(archive):
     """Rename a file."""
@@ -788,6 +799,7 @@ def test_rename_to_existing_raises(archive):
 # rmdir operations
 # =============================================================================
 
+
 def test_rmdir_empty_directory(archive):
     """Remove an empty directory."""
     from barecat import BarecatDirInfo
@@ -830,6 +842,7 @@ def test_rmdir_after_deleting_files(archive):
 # =============================================================================
 # rmtree operations
 # =============================================================================
+
 
 def test_rmtree_directory(archive):
     """Remove directory and all contents."""
@@ -876,6 +889,7 @@ def test_rmtree_deep_structure(archive):
 # =============================================================================
 # scandir operations
 # =============================================================================
+
 
 def test_scandir_basic(archive):
     """Basic scandir iteration."""

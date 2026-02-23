@@ -1,16 +1,16 @@
 """Shared command implementations for CLI and shell."""
+
 import fnmatch
 import os.path as osp
 import stat
 import sys
 from typing import Optional, Callable
 
-from ..core.types import BarecatFileInfo, BarecatDirInfo
-
 
 # =============================================================================
 # ls command
 # =============================================================================
+
 
 def list_entries(
     index,
@@ -41,16 +41,20 @@ def list_entries(
         if name is None:
             name = finfo.path
         if jsonl:
-            output(json.dumps({
-                'type': 'file',
-                'path': finfo.path,
-                'size': finfo.size,
-                'mtime_ns': finfo.mtime_ns,
-                'crc32c': finfo.crc32c,
-                'mode': finfo.mode,
-                'uid': finfo.uid,
-                'gid': finfo.gid,
-            }))
+            output(
+                json.dumps(
+                    {
+                        'type': 'file',
+                        'path': finfo.path,
+                        'size': finfo.size,
+                        'mtime_ns': finfo.mtime_ns,
+                        'crc32c': finfo.crc32c,
+                        'mode': finfo.mode,
+                        'uid': finfo.uid,
+                        'gid': finfo.gid,
+                    }
+                )
+            )
         elif long_format:
             user, group = _get_user_group(finfo.uid, finfo.gid)
             output(format_entry(finfo.mode, 1, user, group, finfo.size, finfo.mtime_ns, name))
@@ -61,20 +65,26 @@ def list_entries(
         if name is None:
             name = dinfo.path
         if jsonl:
-            output(json.dumps({
-                'type': 'dir',
-                'path': dinfo.path,
-                'size_tree': dinfo.size_tree,
-                'num_files_tree': dinfo.num_files_tree,
-                'mtime_ns': dinfo.mtime_ns,
-                'mode': dinfo.mode,
-                'uid': dinfo.uid,
-                'gid': dinfo.gid,
-            }))
+            output(
+                json.dumps(
+                    {
+                        'type': 'dir',
+                        'path': dinfo.path,
+                        'size_tree': dinfo.size_tree,
+                        'num_files_tree': dinfo.num_files_tree,
+                        'mtime_ns': dinfo.mtime_ns,
+                        'mode': dinfo.mode,
+                        'uid': dinfo.uid,
+                        'gid': dinfo.gid,
+                    }
+                )
+            )
         elif long_format:
             user, group = _get_user_group(dinfo.uid, dinfo.gid)
             nlink = (dinfo.num_subdirs or 0) + 2
-            output(format_entry(dinfo.mode, nlink, user, group, dinfo.size_tree, dinfo.mtime_ns, name))
+            output(
+                format_entry(dinfo.mode, nlink, user, group, dinfo.size_tree, dinfo.mtime_ns, name)
+            )
         else:
             # Add trailing / for directories in short format (like shell ls)
             output(name + '/' if name else name)
@@ -136,6 +146,7 @@ def list_entries(
 # find command
 # =============================================================================
 
+
 def find_entries(
     index,
     path: str = '',
@@ -179,26 +190,24 @@ def find_entries(
 
     if pathpattern:
         pattern = _normalize_pattern(pathpattern)
-        conditions.append("path GLOB ?")
+        conditions.append('path GLOB ?')
         params.append(pattern)
 
     if size_op == 'gt':
-        conditions.append("size > ?")
+        conditions.append('size > ?')
         params.append(size_val)
     elif size_op == 'lt':
-        conditions.append("size < ?")
+        conditions.append('size < ?')
         params.append(size_val)
     elif size_op == 'eq':
-        conditions.append("size = ?")
+        conditions.append('size = ?')
         params.append(size_val)
 
     if maxdepth is not None:
         max_abs_depth = root_depth + maxdepth
         depth_expr = "length(path) - length(replace(path, '/', '')) + (path != '')"
-        conditions.append(f"{depth_expr} <= ?")
+        conditions.append(f'{depth_expr} <= ?')
         params.append(max_abs_depth)
-
-    sep = '\0' if print0 else '\n'
 
     def out(p):
         if print0:
@@ -212,13 +221,13 @@ def find_entries(
         file_params = params.copy()
 
         if root_path:
-            file_conditions.insert(0, "(path = ? OR path GLOB ?)")
+            file_conditions.insert(0, '(path = ? OR path GLOB ?)')
             file_params = [root_path, f'{root_path}/*'] + file_params
 
         if file_conditions:
             file_query = f"SELECT path, size FROM files WHERE {' AND '.join(file_conditions)}"
         else:
-            file_query = "SELECT path, size FROM files"
+            file_query = 'SELECT path, size FROM files'
 
         for row in index.fetch_iter(file_query, tuple(file_params)):
             p = row['path']
@@ -236,13 +245,13 @@ def find_entries(
                 dir_conditions[i] = cond.replace('size', 'size_tree')
 
         if root_path:
-            dir_conditions.insert(0, "(path = ? OR path GLOB ?)")
+            dir_conditions.insert(0, '(path = ? OR path GLOB ?)')
             dir_params = [root_path, f'{root_path}/*'] + dir_params
 
         if dir_conditions:
             dir_query = f"SELECT path, size_tree FROM dirs WHERE {' AND '.join(dir_conditions)}"
         else:
-            dir_query = "SELECT path, size_tree FROM dirs"
+            dir_query = 'SELECT path, size_tree FROM dirs'
 
         for row in index.fetch_iter(dir_query, tuple(dir_params)):
             p = row['path'] or '.'
@@ -256,6 +265,7 @@ def find_entries(
 # =============================================================================
 # tree command
 # =============================================================================
+
 
 def tree_entries(
     index,
@@ -308,7 +318,7 @@ def tree_entries(
             items = [(name, True) for name in dirs] + [(name, False) for name in files]
 
         for i, (name, is_dir) in enumerate(items):
-            is_last = (i == len(items) - 1)
+            is_last = i == len(items) - 1
             connector = '└── ' if is_last else '├── '
             child_prefix = prefix + ('    ' if is_last else '│   ')
             full_path = osp.join(current_path, name) if current_path else name
@@ -332,6 +342,7 @@ def tree_entries(
 # =============================================================================
 # du command
 # =============================================================================
+
 
 def du_entries(
     index,
@@ -376,30 +387,41 @@ def du_entries(
     max_abs_depth = root_depth + max_depth if max_depth is not None else None
 
     depth_expr = "length(path) - length(replace(path, '/', '')) + (path != '')"
-    depth_filter = f" AND {depth_expr} <= ?" if max_abs_depth is not None else ""
+    depth_filter = f' AND {depth_expr} <= ?' if max_abs_depth is not None else ''
 
     # Query directories
     if root_path:
-        dir_query = f"SELECT path, size_tree FROM dirs WHERE (path = ? OR path GLOB ?){depth_filter}"
-        dir_params = (root_path, f'{root_path}/*') + ((max_abs_depth,) if max_abs_depth is not None else ())
+        dir_query = (
+            f'SELECT path, size_tree FROM dirs WHERE (path = ? OR path GLOB ?){depth_filter}'
+        )
+        dir_params = (root_path, f'{root_path}/*') + (
+            (max_abs_depth,) if max_abs_depth is not None else ()
+        )
     else:
-        dir_query = f"SELECT path, size_tree FROM dirs{depth_filter.replace(' AND ', ' WHERE ', 1)}"
+        dir_query = (
+            f"SELECT path, size_tree FROM dirs{depth_filter.replace(' AND ', ' WHERE ', 1)}"
+        )
         dir_params = (max_abs_depth,) if max_abs_depth is not None else ()
 
-    entries = [(row['path'] or '.', row['size_tree'] or 0)
-               for row in index.fetch_iter(dir_query, dir_params)]
+    entries = [
+        (row['path'] or '.', row['size_tree'] or 0)
+        for row in index.fetch_iter(dir_query, dir_params)
+    ]
 
     # Query files if -a flag
     if all_files:
         if root_path:
-            file_query = f"SELECT path, size FROM files WHERE path GLOB ?{depth_filter}"
-            file_params = (f'{root_path}/*',) + ((max_abs_depth,) if max_abs_depth is not None else ())
+            file_query = f'SELECT path, size FROM files WHERE path GLOB ?{depth_filter}'
+            file_params = (f'{root_path}/*',) + (
+                (max_abs_depth,) if max_abs_depth is not None else ()
+            )
         else:
-            file_query = f"SELECT path, size FROM files WHERE 1{depth_filter}"
+            file_query = f'SELECT path, size FROM files WHERE 1{depth_filter}'
             file_params = (max_abs_depth,) if max_abs_depth is not None else ()
 
-        entries += [(row['path'], row['size'] or 0)
-                    for row in index.fetch_iter(file_query, file_params)]
+        entries += [
+            (row['path'], row['size'] or 0) for row in index.fetch_iter(file_query, file_params)
+        ]
 
     # Sort: deeper paths first, then alphabetically
     entries.sort(key=lambda x: (-x[0].count('/'), x[0]))

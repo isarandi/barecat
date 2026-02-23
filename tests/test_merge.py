@@ -607,8 +607,12 @@ def test_merge_preserves_file_metadata():
         from io import BytesIO
 
         with Barecat(source_path, readonly=False) as bc:
-            bc.add(barecat.BarecatFileInfo('file.txt', size=5, mode=0o755, mtime_ns=1234567890000000000),
-                   fileobj=BytesIO(b'hello'))
+            bc.add(
+                barecat.BarecatFileInfo(
+                    'file.txt', size=5, mode=0o755, mtime_ns=1234567890000000000
+                ),
+                fileobj=BytesIO(b'hello'),
+            )
 
         with Barecat(target_path, readonly=False) as bc:
             pass
@@ -934,7 +938,7 @@ def test_merge_source_file_conflicts_with_target_dir():
             bc['data/file.txt'] = b'nested'
 
         with Barecat(target_path, readonly=False) as bc:
-            with pytest.raises(ValueError, match="conflicts with target directory"):
+            with pytest.raises(ValueError, match='conflicts with target directory'):
                 bc.merge_from_other_barecat(source_path)
 
 
@@ -953,7 +957,7 @@ def test_merge_source_dir_conflicts_with_target_file():
             bc['data'] = b'im a file'
 
         with Barecat(target_path, readonly=False) as bc:
-            with pytest.raises(ValueError, match="conflicts with target file"):
+            with pytest.raises(ValueError, match='conflicts with target file'):
                 bc.merge_from_other_barecat(source_path)
 
 
@@ -986,6 +990,7 @@ def test_merge_preserves_empty_files():
 # ============================================================================
 # Symlink-based merge tests (Index.merge_from_other_barecat)
 # ============================================================================
+
 
 def symlink_shards(source_path, target_path, target_num_shards):
     """Symlink source shards to target with adjusted numbering."""
@@ -1107,7 +1112,7 @@ def test_symlink_merge_conflict_file_vs_dir():
         symlink_shards(source_path, target_path, target_num_shards)
 
         with Index(target_path, readonly=False) as idx:
-            with pytest.raises(ValueError, match="conflicts with target directory"):
+            with pytest.raises(ValueError, match='conflicts with target directory'):
                 idx.merge_from_other_barecat(source_path)
 
 
@@ -1129,7 +1134,7 @@ def test_symlink_merge_conflict_dir_vs_file():
         symlink_shards(source_path, target_path, target_num_shards)
 
         with Index(target_path, readonly=False) as idx:
-            with pytest.raises(ValueError, match="conflicts with target file"):
+            with pytest.raises(ValueError, match='conflicts with target file'):
                 idx.merge_from_other_barecat(source_path)
 
 
@@ -1151,7 +1156,7 @@ def test_symlink_merge_prefix_conflicts_with_file():
         symlink_shards(source_path, target_path, target_num_shards)
 
         with Index(target_path, readonly=False) as idx:
-            with pytest.raises(ValueError, match="exists as a file"):
+            with pytest.raises(ValueError, match='exists as a file'):
                 idx.merge_from_other_barecat(source_path, prefix='imported')
 
 
@@ -1170,7 +1175,7 @@ def test_symlink_merge_multi_shard():
 
         with Barecat(source_path, readonly=True) as bc:
             source_num_shards = bc.sharder.num_shards
-            assert source_num_shards > 1, "Source should have multiple shards"
+            assert source_num_shards > 1, 'Source should have multiple shards'
 
         with Barecat(target_path, readonly=False) as bc:
             bc['existing.txt'] = b'existing'
@@ -1276,9 +1281,9 @@ def test_merge_with_filter_rules():
         # Include all txt, exclude thumbs except important.jpg
         filter_rules = [
             ('+', '**/important.jpg'),  # include this specific file
-            ('-', 'thumbs/**'),         # exclude thumbs dir
-            ('-', '**/*.tmp'),          # exclude temp files
-            ('-', '**/*.log'),          # exclude log files
+            ('-', 'thumbs/**'),  # exclude thumbs dir
+            ('-', '**/*.tmp'),  # exclude temp files
+            ('-', '**/*.log'),  # exclude log files
         ]
 
         with Barecat(target_path, readonly=False) as bc:
@@ -1397,9 +1402,7 @@ def test_merge_filtered_ignore_duplicates():
             bc['dup.txt'] = b'target_version'
 
         with Barecat(target_path, readonly=False) as bc:
-            bc.merge_from_other_barecat(
-                source_path, pattern='**/*.txt', ignore_duplicates=True
-            )
+            bc.merge_from_other_barecat(source_path, pattern='**/*.txt', ignore_duplicates=True)
             assert bc.verify_integrity()
 
         with Barecat(target_path, readonly=True) as bc:
@@ -1498,17 +1501,23 @@ def test_filter_first_match_wins_order_matters():
 
         # Order 1: include first, then exclude
         with Barecat(target1_path, readonly=False) as bc:
-            bc.merge_from_other_barecat(source_path, filter_rules=[
-                ('+', '**/*.txt'),   # matches first -> included
-                ('-', 'data/**'),    # never reached
-            ])
+            bc.merge_from_other_barecat(
+                source_path,
+                filter_rules=[
+                    ('+', '**/*.txt'),  # matches first -> included
+                    ('-', 'data/**'),  # never reached
+                ],
+            )
 
         # Order 2: exclude first, then include
         with Barecat(target2_path, readonly=False) as bc:
-            bc.merge_from_other_barecat(source_path, filter_rules=[
-                ('-', 'data/**'),    # matches first -> excluded
-                ('+', '**/*.txt'),   # never reached
-            ])
+            bc.merge_from_other_barecat(
+                source_path,
+                filter_rules=[
+                    ('-', 'data/**'),  # matches first -> excluded
+                    ('+', '**/*.txt'),  # never reached
+                ],
+            )
 
         with Barecat(target1_path, readonly=True) as bc:
             assert 'data/file.txt' in bc  # included (order 1)
@@ -1529,10 +1538,13 @@ def test_filter_all_excludes_default_include():
             bc['skip.tmp'] = b'tmp'
 
         with Barecat(target_path, readonly=False) as bc:
-            bc.merge_from_other_barecat(source_path, filter_rules=[
-                ('-', '**/*.log'),
-                ('-', '**/*.tmp'),
-            ])
+            bc.merge_from_other_barecat(
+                source_path,
+                filter_rules=[
+                    ('-', '**/*.log'),
+                    ('-', '**/*.tmp'),
+                ],
+            )
 
         with Barecat(target_path, readonly=True) as bc:
             assert bc['keep.txt'] == b'keep'  # default include
@@ -1554,9 +1566,12 @@ def test_filter_hidden_files():
             bc['dir/.gitignore'] = b'gitignore'
 
         with Barecat(target_path, readonly=False) as bc:
-            bc.merge_from_other_barecat(source_path, filter_rules=[
-                ('-', '**/.*'),  # exclude hidden files
-            ])
+            bc.merge_from_other_barecat(
+                source_path,
+                filter_rules=[
+                    ('-', '**/.*'),  # exclude hidden files
+                ],
+            )
 
         with Barecat(target_path, readonly=True) as bc:
             assert bc['visible.txt'] == b'visible'
@@ -1661,16 +1676,19 @@ def test_filter_overlapping_patterns():
             bc['data/other/file.txt'] = b'other'
 
         with Barecat(target_path, readonly=False) as bc:
-            bc.merge_from_other_barecat(source_path, filter_rules=[
-                ('+', '**/important/**'),  # include important subdir
-                ('-', 'data/**'),          # exclude all of data
-                ('+', '**/*.txt'),         # this won't matter for data/*
-            ])
+            bc.merge_from_other_barecat(
+                source_path,
+                filter_rules=[
+                    ('+', '**/important/**'),  # include important subdir
+                    ('-', 'data/**'),  # exclude all of data
+                    ('+', '**/*.txt'),  # this won't matter for data/*
+                ],
+            )
 
         with Barecat(target_path, readonly=True) as bc:
             assert bc['data/important/file.txt'] == b'important'  # matched first rule
-            assert 'data/cache/file.txt' not in bc   # matched second rule
-            assert 'data/other/file.txt' not in bc   # matched second rule
+            assert 'data/cache/file.txt' not in bc  # matched second rule
+            assert 'data/other/file.txt' not in bc  # matched second rule
             assert bc.verify_integrity()
 
 
@@ -1795,10 +1813,13 @@ def test_filter_include_then_exclude_same_pattern():
             bc['logs/debug.log'] = b'debug'
 
         with Barecat(target_path, readonly=False) as bc:
-            bc.merge_from_other_barecat(source_path, filter_rules=[
-                ('+', '**/error.log'),   # specifically include error.log
-                ('-', '**/*.log'),       # exclude all other logs
-            ])
+            bc.merge_from_other_barecat(
+                source_path,
+                filter_rules=[
+                    ('+', '**/error.log'),  # specifically include error.log
+                    ('-', '**/*.log'),  # exclude all other logs
+                ],
+            )
 
         with Barecat(target_path, readonly=True) as bc:
             assert bc['logs/error.log'] == b'error'
@@ -1822,12 +1843,15 @@ def test_filter_multiple_extensions():
 
         # Use bracket to match multiple extensions
         with Barecat(target_path, readonly=False) as bc:
-            bc.merge_from_other_barecat(source_path, filter_rules=[
-                ('+', '**/*.jpg'),
-                ('+', '**/*.jpeg'),
-                ('+', '**/*.png'),
-                ('-', '**/*'),  # exclude everything else
-            ])
+            bc.merge_from_other_barecat(
+                source_path,
+                filter_rules=[
+                    ('+', '**/*.jpg'),
+                    ('+', '**/*.jpeg'),
+                    ('+', '**/*.png'),
+                    ('-', '**/*'),  # exclude everything else
+                ],
+            )
 
         with Barecat(target_path, readonly=True) as bc:
             assert bc['image.jpg'] == b'jpg'
@@ -1858,9 +1882,12 @@ def test_filter_trailing_slash_pattern():
 
         # Exclude thumbs/ (normalized to thumbs/**)
         with Barecat(target_path, readonly=False) as bc:
-            bc.merge_from_other_barecat(source_path, filter_rules=[
-                ('-', 'thumbs/**'),  # CLI would normalize 'thumbs/' to this
-            ])
+            bc.merge_from_other_barecat(
+                source_path,
+                filter_rules=[
+                    ('-', 'thumbs/**'),  # CLI would normalize 'thumbs/' to this
+                ],
+            )
 
         with Barecat(target_path, readonly=True) as bc:
             # thumbs directory and all contents excluded
@@ -1888,10 +1915,13 @@ def test_filter_trailing_slash_include():
 
         # Only include keep/ (normalized to keep/**)
         with Barecat(target_path, readonly=False) as bc:
-            bc.merge_from_other_barecat(source_path, filter_rules=[
-                ('+', 'keep/**'),  # CLI would normalize 'keep/' to this
-                ('-', '**'),  # exclude everything else
-            ])
+            bc.merge_from_other_barecat(
+                source_path,
+                filter_rules=[
+                    ('+', 'keep/**'),  # CLI would normalize 'keep/' to this
+                    ('-', '**'),  # exclude everything else
+                ],
+            )
 
         with Barecat(target_path, readonly=True) as bc:
             assert bc['keep/a.txt'] == b'a'

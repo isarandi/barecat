@@ -1,4 +1,5 @@
 """Interactive shell for exploring barecat archives."""
+
 import cmd
 import os
 import os.path as osp
@@ -29,6 +30,7 @@ class BarecatShell(cmd.Cmd):
         """Configure readline for better completion behavior."""
         try:
             import readline
+
             # Show all completions on first TAB if ambiguous
             readline.parse_and_bind('set show-all-if-ambiguous on')
         except (ImportError, Exception):
@@ -71,7 +73,7 @@ class BarecatShell(cmd.Cmd):
         elif self.bc.index.isdir(path):
             self.cwd = path
         else:
-            print(f"cd: not a directory: {path}")
+            print(f'cd: not a directory: {path}')
         self._update_prompt()
 
     def do_pwd(self, arg: str):
@@ -106,7 +108,7 @@ class BarecatShell(cmd.Cmd):
         path = self._resolve_path(arg.strip() or '')
 
         if not self.bc.index.isdir(path):
-            print(f"lss: not a directory: {path}")
+            print(f'lss: not a directory: {path}')
             return
 
         try:
@@ -127,14 +129,14 @@ class BarecatShell(cmd.Cmd):
 
         # Print directories first
         for name in dirs:
-            print(f"{name}/")
+            print(f'{name}/')
 
         # Group files by numeric pattern
         groups = self._group_by_numeric_pattern(files)
         for pattern, group_files, num_width, num_min, num_max in groups:
             if pattern is not None:
                 # Summarized form (pattern already has stars)
-                print(f"{pattern}  ({len(group_files)} files, {num_min}–{num_max})")
+                print(f'{pattern}  ({len(group_files)} files, {num_min}–{num_max})')
             else:
                 # Individual files
                 for name in group_files:
@@ -159,7 +161,7 @@ class BarecatShell(cmd.Cmd):
             last_end = 0
             for match in re.finditer(r'\d+', name):
                 if match.start() > last_end:
-                    chunks.append(('text', name[last_end:match.start()]))
+                    chunks.append(('text', name[last_end : match.start()]))
                 chunks.append(('num', match.group()))
                 last_end = match.end()
             if last_end < len(name):
@@ -171,10 +173,7 @@ class BarecatShell(cmd.Cmd):
         # Group by structure (sequence of chunk types and text values, with num widths)
         def get_structure(chunks):
             """Get structure key: text chunks + num widths."""
-            return tuple(
-                (typ, val if typ == 'text' else len(val))
-                for typ, val in chunks
-            )
+            return tuple((typ, val if typ == 'text' else len(val)) for typ, val in chunks)
 
         structure_groups = defaultdict(list)
         for name, chunks in parsed:
@@ -200,10 +199,7 @@ class BarecatShell(cmd.Cmd):
 
             # Group by all OTHER numeric values, summarize the most-varying one
             def group_key(chunks):
-                return tuple(
-                    chunks[i][1] for i in range(len(chunks))
-                    if i != max_variance_pos
-                )
+                return tuple(chunks[i][1] for i in range(len(chunks)) if i != max_variance_pos)
 
             subgroups = defaultdict(list)
             for name, chunks in items:
@@ -225,7 +221,9 @@ class BarecatShell(cmd.Cmd):
                     # Get min/max of the varying numbers
                     varying_nums = [chunks[max_variance_pos][1] for _, chunks in subitems]
                     group_files = [name for name, _ in subitems]
-                    result.append((pattern, group_files, num_width, min(varying_nums), max(varying_nums)))
+                    result.append(
+                        (pattern, group_files, num_width, min(varying_nums), max(varying_nums))
+                    )
                 else:
                     # Too few - list individually
                     result.append((None, [name for name, _ in subitems], None, None, None))
@@ -236,7 +234,7 @@ class BarecatShell(cmd.Cmd):
         """Print entry in long format."""
         if self.bc.index.isdir(path):
             info = self.bc.index.lookup_dir(path)
-            print(f"d  {info.size_tree:>12}  {info.num_files_tree:>6} files  {display_name}/")
+            print(f'd  {info.size_tree:>12}  {info.num_files_tree:>6} files  {display_name}/')
         else:
             self._print_file_long(path, display_name)
 
@@ -244,13 +242,13 @@ class BarecatShell(cmd.Cmd):
         """Print file in long format."""
         info = self.bc.index.lookup_file(path)
         display = display_name or osp.basename(path)
-        print(f"-  {info.size:>12}  shard:{info.shard:<3} @{info.offset:<10}  {display}")
+        print(f'-  {info.size:>12}  shard:{info.shard:<3} @{info.offset:<10}  {display}')
 
     def _print_dir_long(self, path: str, display_name: Optional[str] = None):
         """Print directory in long format."""
         info = self.bc.index.lookup_dir(path)
         display = display_name or (osp.basename(path) if path else '/')
-        print(f"d  {info.size_tree:>12}  {info.num_files_tree:>6} files  {display}/")
+        print(f'd  {info.size_tree:>12}  {info.num_files_tree:>6} files  {display}/')
 
     def do_tree(self, arg: str):
         """Show directory tree: tree [-L N] [-d] [path]"""
@@ -287,7 +285,7 @@ class BarecatShell(cmd.Cmd):
         """Print file contents: cat <path>"""
         path = self._resolve_path(arg.strip())
         if not path:
-            print("cat: missing path")
+            print('cat: missing path')
             return
         try:
             data = self.bc[path]
@@ -295,7 +293,7 @@ class BarecatShell(cmd.Cmd):
             if not data.endswith(b'\n'):
                 print()  # Ensure newline at end
         except KeyError:
-            print(f"cat: {path}: No such file")
+            print(f'cat: {path}: No such file')
 
     def do_head(self, arg: str):
         """Print first N bytes: head [-n N] <path>"""
@@ -313,7 +311,7 @@ class BarecatShell(cmd.Cmd):
                 i += 1
 
         if not path:
-            print("head: missing path")
+            print('head: missing path')
             return
 
         path = self._resolve_path(path)
@@ -323,32 +321,32 @@ class BarecatShell(cmd.Cmd):
             if not data.endswith(b'\n'):
                 print()
         except KeyError:
-            print(f"head: {path}: No such file")
+            print(f'head: {path}: No such file')
 
     def do_stat(self, arg: str):
         """Show file/directory metadata: stat <path>"""
         path = self._resolve_path(arg.strip())
         if not path:
-            print("stat: missing path")
+            print('stat: missing path')
             return
 
         try:
             if self.bc.index.isfile(path):
                 info = self.bc.index.lookup_file(path)
-                print(f"  File: {info.path}")
-                print(f"  Size: {info.size}")
-                print(f" Shard: {info.shard}")
-                print(f"Offset: {info.offset}")
-                print(f"CRC32C: {info.crc32c:#010x}" if info.crc32c else "CRC32C: (none)")
+                print(f'  File: {info.path}')
+                print(f'  Size: {info.size}')
+                print(f' Shard: {info.shard}')
+                print(f'Offset: {info.offset}')
+                print(f'CRC32C: {info.crc32c:#010x}' if info.crc32c else 'CRC32C: (none)')
             elif self.bc.index.isdir(path):
                 info = self.bc.index.lookup_dir(path)
-                print(f"   Dir: /{info.path}")
-                print(f" Files: {info.num_files} (direct)")
-                print(f" Total: {info.num_files_tree} files, {info.size_tree} bytes")
+                print(f'   Dir: /{info.path}')
+                print(f' Files: {info.num_files} (direct)')
+                print(f' Total: {info.num_files_tree} files, {info.size_tree} bytes')
             else:
-                print(f"stat: {path}: No such file or directory")
+                print(f'stat: {path}: No such file or directory')
         except KeyError:
-            print(f"stat: {path}: No such file or directory")
+            print(f'stat: {path}: No such file or directory')
 
     def do_find(self, arg: str):
         """Find files like /usr/bin/find: find [path] [-name PAT] [-type f|d] [-size [+-]N] [-maxdepth N]"""
@@ -386,7 +384,7 @@ class BarecatShell(cmd.Cmd):
                 start_path = a
                 i += 1
             else:
-                print(f"find: unknown option: {a}")
+                print(f'find: unknown option: {a}')
                 return
 
         find_entries(
@@ -444,9 +442,9 @@ class BarecatShell(cmd.Cmd):
         path = self._resolve_local_path(path)
         if osp.isdir(path):
             self.local_cwd = path
-            print(f"Local directory: {self.local_cwd}")
+            print(f'Local directory: {self.local_cwd}')
         else:
-            print(f"lcd: not a directory: {path}")
+            print(f'lcd: not a directory: {path}')
 
     def do_lpwd(self, arg: str):
         """Print local working directory"""
@@ -459,11 +457,11 @@ class BarecatShell(cmd.Cmd):
             for name in sorted(os.listdir(path)):
                 full = osp.join(path, name)
                 if osp.isdir(full):
-                    print(f"{name}/")
+                    print(f'{name}/')
                 else:
                     print(name)
         except OSError as e:
-            print(f"lls: {e}")
+            print(f'lls: {e}')
 
     # --- File transfer (extract) ---
 
@@ -471,7 +469,7 @@ class BarecatShell(cmd.Cmd):
         """Extract file: get <archive_path> [local_dest]"""
         args = self._parse_args(arg)
         if not args:
-            print("get: missing archive path")
+            print('get: missing archive path')
             return
 
         archive_path = self._resolve_path(args[0])
@@ -490,14 +488,14 @@ class BarecatShell(cmd.Cmd):
                 data = self.bc[archive_path]
                 with open(local_dest, 'wb') as f:
                     f.write(data)
-                print(f"Extracted: {archive_path} -> {local_dest}")
+                print(f'Extracted: {archive_path} -> {local_dest}')
             elif self.bc.index.isdir(archive_path):
                 # Directory - recursive extract
                 self._extract_dir(archive_path, local_dest)
             else:
-                print(f"get: {archive_path}: No such file or directory")
+                print(f'get: {archive_path}: No such file or directory')
         except Exception as e:
-            print(f"get: {e}")
+            print(f'get: {e}')
 
     def _extract_dir(self, archive_dir: str, local_dest: str):
         """Recursively extract a directory."""
@@ -508,7 +506,7 @@ class BarecatShell(cmd.Cmd):
                 archive_path = osp.join(dirpath, filename) if dirpath else filename
                 # Compute relative path within the extracted dir
                 if archive_dir:
-                    rel_path = archive_path[len(archive_dir) + 1:]
+                    rel_path = archive_path[len(archive_dir) + 1 :]
                 else:
                     rel_path = archive_path
                 local_path = osp.join(local_dest, rel_path)
@@ -517,13 +515,13 @@ class BarecatShell(cmd.Cmd):
                 with open(local_path, 'wb') as f:
                     f.write(data)
                 count += 1
-        print(f"Extracted {count} files to {local_dest}")
+        print(f'Extracted {count} files to {local_dest}')
 
     def do_mget(self, arg: str):
         """Extract files matching pattern: mget <pattern> [local_dest]"""
         args = self._parse_args(arg)
         if not args:
-            print("mget: missing pattern")
+            print('mget: missing pattern')
             return
 
         pattern = args[0]
@@ -542,20 +540,20 @@ class BarecatShell(cmd.Cmd):
             with open(local_path, 'wb') as f:
                 f.write(data)
             count += 1
-            print(f"  {finfo.path} -> {local_path}")
-        print(f"Extracted {count} files")
+            print(f'  {finfo.path} -> {local_path}')
+        print(f'Extracted {count} files')
 
     # --- Write operations ---
 
     def do_put(self, arg: str):
         """Add file to archive: put <local_path> [archive_path]"""
         if self.readonly:
-            print("put: archive is read-only (use barecat-shell --write)")
+            print('put: archive is read-only (use barecat-shell --write)')
             return
 
         args = self._parse_args(arg)
         if not args:
-            print("put: missing local path")
+            print('put: missing local path')
             return
 
         local_path = self._resolve_local_path(args[0])
@@ -566,29 +564,30 @@ class BarecatShell(cmd.Cmd):
             archive_path = self._resolve_path(osp.basename(local_path))
 
         if not osp.isfile(local_path):
-            print(f"put: {local_path}: No such file")
+            print(f'put: {local_path}: No such file')
             return
 
         try:
             with open(local_path, 'rb') as f:
                 data = f.read()
             self.bc[archive_path] = data
-            print(f"Added: {local_path} -> {archive_path}")
+            print(f'Added: {local_path} -> {archive_path}')
         except Exception as e:
-            print(f"put: {e}")
+            print(f'put: {e}')
 
     def do_mput(self, arg: str):
         """Add files matching glob: mput <pattern> [archive_dir]"""
         if self.readonly:
-            print("mput: archive is read-only (use barecat-shell --write)")
+            print('mput: archive is read-only (use barecat-shell --write)')
             return
 
         args = self._parse_args(arg)
         if not args:
-            print("mput: missing pattern")
+            print('mput: missing pattern')
             return
 
         import glob as glob_module
+
         pattern = self._resolve_local_path(args[0])
         archive_dir = self._resolve_path(args[1]) if len(args) > 1 else self.cwd
 
@@ -600,41 +599,41 @@ class BarecatShell(cmd.Cmd):
                 with open(local_path, 'rb') as f:
                     data = f.read()
                 self.bc[archive_path] = data
-                print(f"  {local_path} -> {archive_path}")
+                print(f'  {local_path} -> {archive_path}')
                 count += 1
-        print(f"Added {count} files")
+        print(f'Added {count} files')
 
     def do_rm(self, arg: str):
         """Remove file from archive: rm <path>"""
         if self.readonly:
-            print("rm: archive is read-only (use barecat-shell --write)")
+            print('rm: archive is read-only (use barecat-shell --write)')
             return
 
         path = self._resolve_path(arg.strip())
         if not path:
-            print("rm: missing path")
+            print('rm: missing path')
             return
 
         try:
             if self.bc.index.isfile(path):
                 del self.bc[path]
-                print(f"Removed: {path}")
+                print(f'Removed: {path}')
             elif self.bc.index.isdir(path):
-                print(f"rm: {path}: Is a directory (use rmdir or rm -r)")
+                print(f'rm: {path}: Is a directory (use rmdir or rm -r)')
             else:
-                print(f"rm: {path}: No such file")
+                print(f'rm: {path}: No such file')
         except Exception as e:
-            print(f"rm: {e}")
+            print(f'rm: {e}')
 
     def do_mv(self, arg: str):
         """Rename/move file in archive: mv <old> <new>"""
         if self.readonly:
-            print("mv: archive is read-only (use barecat-shell --write)")
+            print('mv: archive is read-only (use barecat-shell --write)')
             return
 
         args = self._parse_args(arg)
         if len(args) < 2:
-            print("mv: need source and destination")
+            print('mv: need source and destination')
             return
 
         old_path = self._resolve_path(args[0])
@@ -642,20 +641,20 @@ class BarecatShell(cmd.Cmd):
 
         try:
             self.bc.rename(old_path, new_path)
-            print(f"Renamed: {old_path} -> {new_path}")
+            print(f'Renamed: {old_path} -> {new_path}')
         except Exception as e:
-            print(f"mv: {e}")
+            print(f'mv: {e}')
 
     # --- Info commands ---
 
     def do_info(self, arg: str):
         """Show archive info"""
-        print(f"Archive: {self.archive_path}")
-        print(f"  Files: {self.bc.index.num_files}")
-        print(f"   Dirs: {self.bc.index.num_dirs}")
+        print(f'Archive: {self.archive_path}')
+        print(f'  Files: {self.bc.index.num_files}')
+        print(f'   Dirs: {self.bc.index.num_dirs}')
         root = self.bc.index.lookup_dir('')
-        print(f"  Total: {root.size_tree} bytes")
-        print(f" Shards: {self.bc.sharder.num_shards}")
+        print(f'  Total: {root.size_tree} bytes')
+        print(f' Shards: {self.bc.sharder.num_shards}')
 
     # --- SQL access ---
 
@@ -666,11 +665,12 @@ class BarecatShell(cmd.Cmd):
             # Launch sqlite3 REPL if available (Python 3.11+)
             try:
                 from sqlite3.__main__ import SqliteInteractiveConsole
-                print("Type .quit or Ctrl-D to return to barecat shell")
+
+                print('Type .quit or Ctrl-D to return to barecat shell')
                 console = SqliteInteractiveConsole(self.bc.index.connection)
                 console.interact(banner='', exitmsg='')
             except ImportError:
-                print("sql: provide a query, or upgrade to Python 3.11+ for interactive REPL")
+                print('sql: provide a query, or upgrade to Python 3.11+ for interactive REPL')
             return
 
         try:
@@ -684,9 +684,9 @@ class BarecatShell(cmd.Cmd):
                 print('-' * 40)
                 for row in rows:
                     print('\t'.join(str(v) for v in row))
-            print(f"({len(rows)} rows)")
+            print(f'({len(rows)} rows)')
         except Exception as e:
-            print(f"sql error: {e}", file=sys.stderr)
+            print(f'sql error: {e}', file=sys.stderr)
 
     # --- Exit ---
 
@@ -711,18 +711,19 @@ class BarecatShell(cmd.Cmd):
             cmd = line[1:].strip()
             if cmd:
                 import subprocess
+
                 subprocess.run(cmd, shell=True, cwd=self.local_cwd)
             else:
-                print("!: missing command")
+                print('!: missing command')
         elif line.startswith('.'):
             cmd_name = line[1:].split()[0]
-            rest = line[len(cmd_name) + 1:].strip()
+            rest = line[len(cmd_name) + 1 :].strip()
             method = getattr(self, f'do_{cmd_name}', None)
             if method:
                 return method(rest)
-            print(f"Unknown command: {line}")
+            print(f'Unknown command: {line}')
         else:
-            print(f"Unknown command: {line}")
+            print(f'Unknown command: {line}')
 
     # --- Tab completion ---
 
@@ -801,18 +802,17 @@ class BarecatShell(cmd.Cmd):
 def main():
     """Entry point for barecat-shell command."""
     import argparse
+
     parser = argparse.ArgumentParser(
         description='Interactive shell for exploring barecat archives'
     )
     parser.add_argument('archive', help='Path to the barecat archive')
+    parser.add_argument('-c', '--command', help='Execute command and exit (like sqlite3 -c)')
     parser.add_argument(
-        '-c', '--command',
-        help='Execute command and exit (like sqlite3 -c)'
-    )
-    parser.add_argument(
-        '-w', '--write',
+        '-w',
+        '--write',
         action='store_true',
-        help='Open archive for writing (enables put, rm, mv commands)'
+        help='Open archive for writing (enables put, rm, mv commands)',
     )
     args = parser.parse_args()
 

@@ -31,7 +31,6 @@ if TYPE_CHECKING:
         BarecatFileInfo,
         BarecatEntryInfo,
         Index,
-        BarecatReadWriteFileObject,
         BarecatFileObject,
     )
     from .paths import resolve_index_path
@@ -42,7 +41,6 @@ else:
         BarecatEntryInfo,
     )
     from ..io.fileobj import (
-        BarecatReadWriteFileObject,
         BarecatFileObject,
     )
     from .index import Index, normalize_path
@@ -139,7 +137,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
 
         if auto_codec:
             warnings.warn(
-                "auto_codec is deprecated and will be removed in version 1.0. "
+                'auto_codec is deprecated and will be removed in version 1.0. '
                 "Use DecodedView instead: dec = DecodedView(bc); dec['file.json'] = data",
                 DeprecationWarning,
                 stacklevel=2,
@@ -171,7 +169,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         # Typically used in training loop
         path = normalize_path(path)
         row = self.index.fetch_one(
-            "SELECT shard, offset, size, crc32c FROM files WHERE path=?", (path,)
+            'SELECT shard, offset, size, crc32c FROM files WHERE path=?', (path,)
         )
         if row is None:
             raise KeyError(path)
@@ -564,7 +562,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         else:
             path = normalize_path(item)
             row = self.index.fetch_one(
-                "SELECT shard, offset, size, crc32c FROM files WHERE path=?", (path,)
+                'SELECT shard, offset, size, crc32c FROM files WHERE path=?', (path,)
             )
             if row is None:
                 raise FileNotFoundBarecatError(path)
@@ -604,7 +602,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             crc32c = crc32c_lib.crc32c(data)
             if crc32c != finfo.crc32c:
                 raise ValueError(
-                    f"CRC32C mismatch for {finfo.path}. Expected {finfo.crc32c}, got {crc32c}"
+                    f'CRC32C mismatch for {finfo.path}. Expected {finfo.crc32c}, got {crc32c}'
                 )
         return data
 
@@ -1030,7 +1028,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         with self.open(finfo, 'rb') as f:
             crc32c = accumulate_crc32c(f)
         if finfo.crc32c is not None and crc32c != finfo.crc32c:
-            print(f"CRC32C mismatch for {finfo.path}. Expected {finfo.crc32c}, got {crc32c}")
+            print(f'CRC32C mismatch for {finfo.path}. Expected {finfo.crc32c}, got {crc32c}')
             return False
         return True
 
@@ -1148,8 +1146,8 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             >>> bc.register_codec(['.pkl'], pickle.dumps, pickle.loads)
         """
         warnings.warn(
-            "register_codec is deprecated and will be removed in version 1.0. "
-            "Use DecodedView instead: dec = DecodedView(bc); dec.register_codec(...)",
+            'register_codec is deprecated and will be removed in version 1.0. '
+            'Use DecodedView instead: dec = DecodedView(bc); dec.register_codec(...)',
             DeprecationWarning,
             stacklevel=2,
         )

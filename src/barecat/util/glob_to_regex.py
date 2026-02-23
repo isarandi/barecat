@@ -59,7 +59,7 @@ def glob_to_regex(pat, *, recursive=False, include_hidden=False, seps=None):
             if idx < last_part_idx:
                 results.append(any_sep)
     res = ''.join(results)
-    return fr'(?s:{res})\Z'
+    return rf'(?s:{res})\Z'
 
 
 def _translate(pat, star, question_mark):
@@ -234,7 +234,7 @@ def expand_doublestar(pattern, recursive=True):
         for other in result:
             if other == v:
                 continue
-            if other.endswith('*') and v.startswith(other) and v[len(other):].startswith('/'):
+            if other.endswith('*') and v.startswith(other) and v[len(other) :].startswith('/'):
                 dominated = True
                 break
         if not dominated:
@@ -259,12 +259,12 @@ def pattern_to_sql_exclude(pattern):
     # Case 1: **/*.ext or **/* - any depth with suffix
     if pattern.startswith('**/') and '/' not in pattern[3:]:
         suffix = pattern[3:]  # e.g., '*.ext' or '*'
-        return f"path GLOB :p", {'p': glob_to_sqlite(suffix)}
+        return 'path GLOB :p', {'p': glob_to_sqlite(suffix)}
 
     # Case 2: dir/** - entire subtree
     if pattern.endswith('/**') and '**' not in pattern[:-3] and '*' not in pattern[:-3]:
         prefix = pattern[:-3]  # e.g., 'thumbs'
-        return f"path GLOB :p", {'p': glob_to_sqlite(prefix + '/*')}
+        return 'path GLOB :p', {'p': glob_to_sqlite(prefix + '/*')}
 
     # Case 3: dir/*.ext or *.ext - direct children only, no ** anywhere
     if '**' not in pattern:
@@ -272,13 +272,13 @@ def pattern_to_sql_exclude(pattern):
             parent = pattern.rsplit('/', 1)[0]
             # Check parent has no wildcards
             if '*' not in parent and '?' not in parent and '[' not in parent:
-                return f"parent = :parent AND path GLOB :p", {
+                return 'parent = :parent AND path GLOB :p', {
                     'parent': parent,
-                    'p': glob_to_sqlite(pattern)
+                    'p': glob_to_sqlite(pattern),
                 }
         else:
             # Root level pattern like *.ext
-            return f"parent = '' AND path GLOB :p", {'p': glob_to_sqlite(pattern)}
+            return "parent = '' AND path GLOB :p", {'p': glob_to_sqlite(pattern)}
 
     # Complex pattern - can't handle in SQL
     return None

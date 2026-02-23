@@ -3,14 +3,12 @@ import itertools
 import json
 import os
 import os.path as osp
-import shutil
 import stat
 import sys
 import time
 
 from ..util import misc
 from ..util import physical_order as barecat_physical_order
-from ..io import copyfile as barecat_copyfile
 from ..formats.archive_formats import (
     get_archive_writer,
     iter_archive,
@@ -28,9 +26,14 @@ from ..util.progbar import progressbar
 # Main entry points
 # =============================================================================
 
+
 def create(
-    filesys_and_store_path_pairs, target_path, shard_size_limit, overwrite=False,
-    exist_ok=True, workers=8
+    filesys_and_store_path_pairs,
+    target_path,
+    shard_size_limit,
+    overwrite=False,
+    exist_ok=True,
+    workers=8,
 ):
     if workers is None:
         create_without_workers(
@@ -38,14 +41,25 @@ def create(
         )
     else:
         create_with_workers(
-            filesys_and_store_path_pairs, target_path, shard_size_limit, overwrite, exist_ok,
-            workers
+            filesys_and_store_path_pairs,
+            target_path,
+            shard_size_limit,
+            overwrite,
+            exist_ok,
+            workers,
         )
 
 
 def merge(
-    source_paths, target_path, shard_size_limit, overwrite=False, ignore_duplicates=False,
-    as_subdirs=False, prefix=None, pattern=None, filter_rules=None
+    source_paths,
+    target_path,
+    shard_size_limit,
+    overwrite=False,
+    ignore_duplicates=False,
+    as_subdirs=False,
+    prefix=None,
+    pattern=None,
+    filter_rules=None,
 ):
     with barecat_.Barecat(
         target_path, shard_size_limit=shard_size_limit, readonly=False, overwrite=overwrite
@@ -59,7 +73,10 @@ def merge(
                 parts.append(get_subdir_name(source_path))
             path_prefix = '/'.join(parts)
 
-            print(f'Merging files from {source_path}' + (f' -> {path_prefix}/' if path_prefix else ''))
+            print(
+                f'Merging files from {source_path}'
+                + (f' -> {path_prefix}/' if path_prefix else '')
+            )
 
             if is_traditional_archive(source_path):
                 for file_or_dir_info, fileobj in iter_archive(source_path):
@@ -84,11 +101,17 @@ def merge(
 
 
 def merge_symlink(
-    source_paths, target_path, overwrite=False, ignore_duplicates=False,
-    as_subdirs=False, prefix=None, pattern=None, filter_rules=None
+    source_paths,
+    target_path,
+    overwrite=False,
+    ignore_duplicates=False,
+    as_subdirs=False,
+    prefix=None,
+    pattern=None,
+    filter_rules=None,
 ):
     if pattern or filter_rules:
-        print("Error: --pattern/--include/--exclude not supported with --symlink", file=sys.stderr)
+        print('Error: --pattern/--include/--exclude not supported with --symlink', file=sys.stderr)
         sys.exit(1)
 
     # New format: target_path IS the index file
@@ -97,7 +120,7 @@ def merge_symlink(
 
     with barecat_.Index(target_path, readonly=False) as index_writer:
         c = index_writer.cursor
-        c.execute("COMMIT")
+        c.execute('COMMIT')
         c.execute('PRAGMA synchronous=OFF')
         c.execute('PRAGMA journal_mode=OFF')
 
@@ -111,7 +134,10 @@ def merge_symlink(
                 parts.append(get_subdir_name(source_path))
             path_prefix = '/'.join(parts) or None
 
-            print(f'Merging files from {source_path}' + (f' -> {path_prefix}/' if path_prefix else ''))
+            print(
+                f'Merging files from {source_path}'
+                + (f' -> {path_prefix}/' if path_prefix else '')
+            )
 
             index_writer.merge_from_other_barecat(
                 resolve_index_path(source_path),
@@ -174,8 +200,8 @@ def wrap_archive(src_path, target_path, overwrite=False):
     compression = is_compressed_file(src_path)
     if compression:
         raise ValueError(
-            f"Cannot wrap compressed file ({compression}). "
-            "Wrap only works with uncompressed .tar or .zip files."
+            f'Cannot wrap compressed file ({compression}). '
+            'Wrap only works with uncompressed .tar or .zip files.'
         )
 
     # Check ZIP-specific issues (compression, encryption)
@@ -294,6 +320,7 @@ def print_ncdu_json(path):
 # Higher-level create wrappers
 # =============================================================================
 
+
 def create_from_stdin_paths(
     target_path, shard_size_limit, zero_terminated=False, overwrite=False, workers=None
 ):
@@ -319,7 +346,7 @@ def generate_from_stdin(zero_terminated=False):
     if zero_terminated:
         input_paths = iterate_zero_terminated(sys.stdin.buffer)
     else:
-        input_paths = (l.rstrip('\n') for l in sys.stdin)
+        input_paths = (line.rstrip('\n') for line in sys.stdin)
 
     for input_path in progressbar(input_paths, desc='Packing files', unit=' files'):
         yield input_path, input_path
@@ -345,6 +372,7 @@ def generate_from_walks(roots, strip_root):
 # Implementation helpers
 # =============================================================================
 
+
 def create_without_workers(
     filesys_and_store_path_pairs, target_path, shard_size_limit, overwrite=False, exist_ok=True
 ):
@@ -361,8 +389,12 @@ def create_without_workers(
 
 
 def create_with_workers(
-    filesys_and_store_path_pairs, target_path, shard_size_limit, overwrite=False, exist_ok=True,
-    workers=8
+    filesys_and_store_path_pairs,
+    target_path,
+    shard_size_limit,
+    overwrite=False,
+    exist_ok=True,
+    workers=8,
 ):
     if misc.exists(target_path):
         if not exist_ok:
@@ -370,18 +402,19 @@ def create_with_workers(
         if overwrite:
             misc.remove(target_path)
 
-    with Sharder(
+    with (
+        Sharder(
             target_path,
             shard_size_limit=shard_size_limit,
             readonly=False,
             append_only=False,
             threadsafe=True,
             allow_writing_symlinked_shard=False,
-    ) as sharder, ConsumedThreadPool(
+        ) as sharder,
+        ConsumedThreadPool(
             index_writer_main, main_args=(target_path,), max_workers=workers
-    ) as ctp:
-
-
+        ) as ctp,
+    ):
         for filesys_path, store_path in filesys_and_store_path_pairs:
             statresult = os.stat(filesys_path)
 
@@ -506,6 +539,7 @@ def is_compressed_file(path):
 def check_zip_wrappable(path):
     """Check if ZIP file can be wrapped. Returns error message or None if OK."""
     import zipfile
+
     with zipfile.ZipFile(path, 'r') as zf:
         # Check for multi-disk/split archives
         if zf.namelist() and hasattr(zf, 'fp') and zf.fp:
@@ -515,12 +549,12 @@ def check_zip_wrappable(path):
         for info in zf.infolist():
             if info.compress_type != zipfile.ZIP_STORED:
                 return (
-                    "ZIP has compressed entries. "
+                    'ZIP has compressed entries. '
                     "Use 'zip -0' to create uncompressed ZIP, or convert without --wrap."
                 )
             # Check for encryption (bit 0 of flag_bits)
             if info.flag_bits & 0x1:
-                return "ZIP has encrypted entries. Cannot wrap encrypted ZIP files."
+                return 'ZIP has encrypted entries. Cannot wrap encrypted ZIP files.'
     return None
 
 

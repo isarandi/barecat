@@ -16,36 +16,42 @@ _HAS_OPENEXR = False
 
 try:
     import numpy as _np
+
     _HAS_NUMPY = True
 except ImportError:
     pass
 
 try:
     import msgpack_numpy as _msgpack_numpy
+
     _HAS_MSGPACK_NUMPY = True
 except ImportError:
     pass
 
 try:
     import cv2 as _cv2
+
     _HAS_CV2 = True
 except ImportError:
     pass
 
 try:
     import jpeg4py as _jpeg4py
+
     _HAS_JPEG4PY = True
 except ImportError:
     pass
 
 try:
     from PIL import Image as _PILImage
+
     _HAS_PIL = True
 except ImportError:
     pass
 
 try:
     import imageio.v3 as _iio
+
     _HAS_IMAGEIO = True
 except ImportError:
     pass
@@ -53,6 +59,7 @@ except ImportError:
 try:
     import OpenEXR as _OpenEXR
     import Imath as _Imath
+
     _HAS_OPENEXR = True
 except ImportError:
     pass
@@ -60,59 +67,71 @@ except ImportError:
 
 # === Stdlib codecs ===
 
+
 def encode_json(data):
     import json
+
     return json.dumps(data).encode('utf-8')
 
 
 def decode_json(data):
     import json
+
     return json.loads(data.decode('utf-8'))
 
 
 def encode_pickle(data):
     import pickle
+
     return pickle.dumps(data)
 
 
 def decode_pickle(data):
     import pickle
+
     return pickle.loads(data)
 
 
 def encode_gzip(data):
     import gzip
+
     return gzip.compress(data)
 
 
 def decode_gzip(data):
     import gzip
+
     return gzip.decompress(data)
 
 
 def encode_lzma(data):
     import lzma
+
     return lzma.compress(data)
 
 
 def decode_lzma(data):
     import lzma
+
     return lzma.decompress(data)
 
 
 def encode_bz2(data):
     import bz2
+
     return bz2.compress(data, 9)
 
 
 def decode_bz2(data):
     import bz2
+
     return bz2.decompress(data)
 
 
 # === Numpy codecs ===
 
 if _HAS_NUMPY:
+
     def encode_npy(data):
         with io.BytesIO() as f:
             _np.save(f, data)
@@ -135,6 +154,7 @@ if _HAS_NUMPY:
 # === Msgpack codec ===
 
 if _HAS_MSGPACK_NUMPY:
+
     def encode_msgpack(data):
         return _msgpack_numpy.packb(data)
 
@@ -146,10 +166,9 @@ if _HAS_MSGPACK_NUMPY:
 # Priority: cv2 > PIL > imageio (cv2 is fastest for encode/decode)
 # For JPEG decode: jpeg4py > cv2 > PIL > imageio (jpeg4py is fastest)
 
+
 def _no_image_lib():
-    raise ImportError(
-        "No image library available. Install one of: opencv-python, Pillow, imageio"
-    )
+    raise ImportError('No image library available. Install one of: opencv-python, Pillow, imageio')
 
 
 def encode_jpeg(data, quality=95):
@@ -193,7 +212,9 @@ def encode_png(data, compression=None):
     if _HAS_CV2:
         # cv2 default is fast with reasonable compression
         if data.ndim == 3 and data.shape[2] in (3, 4):
-            img = _cv2.cvtColor(data, _cv2.COLOR_RGB2BGR if data.shape[2] == 3 else _cv2.COLOR_RGBA2BGRA)
+            img = _cv2.cvtColor(
+                data, _cv2.COLOR_RGB2BGR if data.shape[2] == 3 else _cv2.COLOR_RGBA2BGRA
+            )
         else:
             img = data
         _, buf = _cv2.imencode('.png', img)
@@ -275,8 +296,15 @@ def encode_exr(data):
         n_channels = data.shape[2] if data.ndim == 3 else 1
 
         header = _OpenEXR.Header(w, h)
-        channel_names = ['R', 'G', 'B', 'A'][:n_channels] if n_channels <= 4 else [f'C{i}' for i in range(n_channels)]
-        header['channels'] = {name: _Imath.Channel(_Imath.PixelType(_Imath.PixelType.FLOAT)) for name in channel_names}
+        channel_names = (
+            ['R', 'G', 'B', 'A'][:n_channels]
+            if n_channels <= 4
+            else [f'C{i}' for i in range(n_channels)]
+        )
+        header['channels'] = {
+            name: _Imath.Channel(_Imath.PixelType(_Imath.PixelType.FLOAT))
+            for name in channel_names
+        }
 
         # OpenEXR requires file, use tempfile
         with tempfile.NamedTemporaryFile(suffix='.exr', delete=False) as f:
@@ -294,7 +322,7 @@ def encode_exr(data):
         # imageio uses float16 by default (lossy)
         return _iio.imwrite('<bytes>', data, extension='.exr')
     else:
-        raise ImportError("EXR requires OpenEXR or imageio. Install: pip install OpenEXR")
+        raise ImportError('EXR requires OpenEXR or imageio. Install: pip install OpenEXR')
 
 
 def decode_exr(data):
@@ -338,7 +366,7 @@ def decode_exr(data):
     elif _HAS_IMAGEIO:
         return _iio.imread(data, extension='.exr')
     else:
-        raise ImportError("EXR requires OpenEXR or imageio. Install: pip install OpenEXR")
+        raise ImportError('EXR requires OpenEXR or imageio. Install: pip install OpenEXR')
 
 
 def encode_image(data, fmt):
@@ -352,7 +380,7 @@ def encode_image(data, fmt):
         pil_img.save(buf, format='TIFF' if fmt_lower in ('tiff', 'tif') else fmt.upper())
         return buf.getvalue()
     else:
-        raise ImportError(f"No library available for {fmt}. Install imageio or Pillow.")
+        raise ImportError(f'No library available for {fmt}. Install imageio or Pillow.')
 
 
 def decode_image(data, fmt=None):
@@ -364,10 +392,11 @@ def decode_image(data, fmt=None):
     elif _HAS_PIL and _HAS_NUMPY:
         return _np.array(_PILImage.open(io.BytesIO(data)))
     else:
-        raise ImportError("No library available. Install imageio or Pillow.")
+        raise ImportError('No library available. Install imageio or Pillow.')
 
 
 # === DecodedView ===
+
 
 class DecodedView(MutableMapping[str, Any]):
     """Dict-like view that always encodes/decodes based on file extension.
@@ -451,7 +480,9 @@ class DecodedView(MutableMapping[str, Any]):
         ext = ext.lower()
 
         if ext not in self.codecs:
-            raise ValueError(f"No codec registered for '{ext}'. Use the store directly for raw bytes.")
+            raise ValueError(
+                f"No codec registered for '{ext}'. Use the store directly for raw bytes."
+            )
 
         encoder, decoder, nonfinal = self.codecs[ext]
 
@@ -465,7 +496,9 @@ class DecodedView(MutableMapping[str, Any]):
         ext = ext.lower()
 
         if ext not in self.codecs:
-            raise ValueError(f"No codec registered for '{ext}'. Use the store directly for raw bytes.")
+            raise ValueError(
+                f"No codec registered for '{ext}'. Use the store directly for raw bytes."
+            )
 
         encoder, decoder, nonfinal = self.codecs[ext]
         data = decoder(data)
@@ -511,6 +544,7 @@ class DecodedView(MutableMapping[str, Any]):
 
 # === Legacy CodecRegistry (deprecated, for backwards compatibility) ===
 
+
 class CodecRegistry:
     """
     .. deprecated::
@@ -537,10 +571,18 @@ class CodecRegistry:
             self.register_codec(['.jpg', '.jpeg'], encode_jpeg, decode_jpeg)
             self.register_codec(['.png'], encode_png, decode_png)
             self.register_codec(['.bmp'], encode_bmp, decode_bmp)
-            self.register_codec(['.gif'], partial(encode_image, fmt='gif'), partial(decode_image, fmt='gif'))
-            self.register_codec(['.tiff'], partial(encode_image, fmt='tiff'), partial(decode_image, fmt='tiff'))
-            self.register_codec(['.tif'], partial(encode_image, fmt='tif'), partial(decode_image, fmt='tif'))
-            self.register_codec(['.webp'], partial(encode_image, fmt='webp'), partial(decode_image, fmt='webp'))
+            self.register_codec(
+                ['.gif'], partial(encode_image, fmt='gif'), partial(decode_image, fmt='gif')
+            )
+            self.register_codec(
+                ['.tiff'], partial(encode_image, fmt='tiff'), partial(decode_image, fmt='tiff')
+            )
+            self.register_codec(
+                ['.tif'], partial(encode_image, fmt='tif'), partial(decode_image, fmt='tif')
+            )
+            self.register_codec(
+                ['.webp'], partial(encode_image, fmt='webp'), partial(decode_image, fmt='webp')
+            )
             self.register_codec(['.exr'], encode_exr, decode_exr)
 
     def register_codec(self, exts, encoder, decoder, nonfinal=False):

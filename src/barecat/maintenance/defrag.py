@@ -37,8 +37,10 @@ class BarecatDefragger:
 
             file_iter = self.index.iter_all_fileinfos(order=Order.ADDRESS)
             for fi in progressbar(file_iter, total=self.index.num_files, desc='Defragging'):
-                if (self.shard_size_limit is not None and new_offset + fi.size >
-                        self.shard_size_limit):
+                if (
+                    self.shard_size_limit is not None
+                    and new_offset + fi.size > self.shard_size_limit
+                ):
                     self.shard_files[new_shard].truncate(new_offset)
                     self.bc.sharder.reopen_shard(new_shard, 'rb')
                     new_shard += 1
@@ -46,8 +48,12 @@ class BarecatDefragger:
 
                 if not (new_shard == fi.shard and new_offset == fi.offset):
                     barecat_copyfile.copy(
-                        self.shard_files[fi.shard], self.shard_files[new_shard],
-                        fi.size, src_offset=fi.offset, dst_offset=new_offset)
+                        self.shard_files[fi.shard],
+                        self.shard_files[new_shard],
+                        fi.size,
+                        src_offset=fi.offset,
+                        dst_offset=new_offset,
+                    )
                     self.index.update_file(fi.path, new_shard, new_offset)
 
                 new_offset += fi.size
@@ -58,7 +64,7 @@ class BarecatDefragger:
             for i in range(new_shard + 1, len(self.shard_files)):
                 self.shard_files[i].close()
                 os.remove(self.shard_files[i].name)
-            del self.shard_files[new_shard + 1:]
+            del self.shard_files[new_shard + 1 :]
 
             new_total = self.bc.total_physical_size_seek
             return old_total - new_total
@@ -152,7 +158,7 @@ class BarecatDefragger:
             for i in range(new_shard + 1, len(self.shard_files)):
                 self.shard_files[i].close()
                 os.remove(self.shard_files[i].name)
-            del self.shard_files[new_shard + 1:]
+            del self.shard_files[new_shard + 1 :]
 
             new_total = self.bc.total_physical_size_seek
             return old_total - new_total
@@ -258,12 +264,16 @@ class BarecatDefragger:
             if skipped:
                 # Compact all files from earliest skipped position onward
                 earliest = min(skipped, key=lambda f: (f.shard, f.offset))
-                tail_files = self.index.fetch_all("""
+                tail_files = self.index.fetch_all(
+                    """
                     SELECT path, shard, offset, size
                     FROM files
                     WHERE shard > ? OR (shard = ? AND offset >= ?)
                     ORDER BY shard, offset
-                """, (earliest.shard, earliest.shard, earliest.offset), rowcls=TailFile)
+                """,
+                    (earliest.shard, earliest.shard, earliest.offset),
+                    rowcls=TailFile,
+                )
                 self._compact_stuck_tail(tail_files, gaps)
 
             self.bc.truncate_all_to_logical_size()
@@ -325,7 +335,8 @@ class BarecatDefragger:
         """
         if include_end_of_shard:
             # Include gaps to shard_size_limit (for defrag operations)
-            gaps = self.index.fetch_all("""
+            gaps = self.index.fetch_all(
+                """
                 WITH x AS (
                     SELECT config.value_int AS shard_size_limit
                     FROM config
@@ -354,16 +365,20 @@ class BarecatDefragger:
                 FROM all_gaps
                 WHERE size > 0
                 ORDER BY shard, offset
-            """, rowcls=FragmentGap)
+            """,
+                rowcls=FragmentGap,
+            )
 
             empty_shard_gaps = [
                 FragmentGap(shard, 0, self.shard_size_limit)
                 for shard in range(len(self.shard_files))
-                if self.bc.index.logical_shard_end(shard) == 0]
+                if self.bc.index.logical_shard_end(shard) == 0
+            ]
             gaps.extend(empty_shard_gaps)
         else:
             # Only gaps between files (for stats)
-            gaps = self.index.fetch_all("""
+            gaps = self.index.fetch_all(
+                """
                 WITH first_gaps AS (
                     SELECT
                         f.shard,
@@ -385,7 +400,9 @@ class BarecatDefragger:
                 FROM all_gaps
                 WHERE size > 0
                 ORDER BY shard, offset
-            """, rowcls=FragmentGap)
+            """,
+                rowcls=FragmentGap,
+            )
 
         gaps.sort(key=lambda gap: (gap.shard, gap.offset))
         return gaps
@@ -397,8 +414,12 @@ class BarecatDefragger:
                 return False
             if gap.size >= fi.size:
                 barecat_copyfile.copy(
-                    self.shard_files[fi.shard], self.shard_files[gap.shard],
-                    fi.size, src_offset=fi.offset, dst_offset=gap.offset)
+                    self.shard_files[fi.shard],
+                    self.shard_files[gap.shard],
+                    fi.size,
+                    src_offset=fi.offset,
+                    dst_offset=gap.offset,
+                )
 
                 self.index.update_file(fi.path, gap.shard, gap.offset)
                 gap.size -= fi.size
@@ -439,7 +460,10 @@ class BarecatDefragger:
         # Try merge with next gap
         if i < len(gaps):
             next_gap = gaps[i]
-            if next_gap.shard == new_gap.shard and new_gap.offset + new_gap.size == next_gap.offset:
+            if (
+                next_gap.shard == new_gap.shard
+                and new_gap.offset + new_gap.size == next_gap.offset
+            ):
                 next_gap.offset = new_gap.offset
                 next_gap.size += new_gap.size
                 return
@@ -459,8 +483,12 @@ class BarecatDefragger:
                     # Shift file backward to close the gap
                     new_offset = gap.offset
                     barecat_copyfile.copy(
-                        self.shard_files[fi.shard], self.shard_files[fi.shard],
-                        fi.size, src_offset=fi.offset, dst_offset=new_offset)
+                        self.shard_files[fi.shard],
+                        self.shard_files[fi.shard],
+                        fi.size,
+                        src_offset=fi.offset,
+                        dst_offset=new_offset,
+                    )
                     self.index.update_file(fi.path, fi.shard, new_offset)
                     # Gap moves to after the file
                     gap.offset = new_offset + fi.size
@@ -500,6 +528,7 @@ class TailFile:
 @dataclasses.dataclass
 class ChunkInfo:
     """Info about a contiguous chunk of files."""
+
     shard: int
     start_offset: int
     end_offset: int

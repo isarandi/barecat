@@ -1,6 +1,6 @@
 import sys
-from ..formats.archive_formats import TarWriter
 from ..core import barecat as barecat_
+
 
 def main(barecat_path):
     with barecat_.Barecat(barecat_path) as bc_reader:

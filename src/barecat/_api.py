@@ -20,7 +20,7 @@ def open(path, mode='r', auto_codec=False, threadsafe_reader=True):
     """
     if auto_codec:
         warnings.warn(
-            "auto_codec is deprecated and will be removed in version 1.0. "
+            'auto_codec is deprecated and will be removed in version 1.0. '
             "Use DecodedView instead: dec = DecodedView(bc); dec['file.json'] = data",
             DeprecationWarning,
             stacklevel=2,
@@ -73,7 +73,7 @@ def open(path, mode='r', auto_codec=False, threadsafe_reader=True):
             auto_codec=auto_codec,
         )
     else:
-        raise ValueError(f"Invalid mode: {mode}")
+        raise ValueError(f'Invalid mode: {mode}')
 
 
 def get_cached_reader(path, auto_codec=True):
@@ -87,9 +87,11 @@ def get_cached_reader(path, auto_codec=True):
     # Thread-local LRU cache
     local = multiprocessing_utils.local()
     if not hasattr(local, '_cache'):
+
         @functools.lru_cache()
         def _open(path, auto_codec):
             return Barecat(path, readonly=True, auto_codec=auto_codec)
+
         local._cache = _open
 
     return local._cache(path, auto_codec)

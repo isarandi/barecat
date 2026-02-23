@@ -4,7 +4,7 @@ files."""
 try:
     from ._version import version as __version__
 except ImportError:
-    __version__ = "0.0.0.dev0"
+    __version__ = '0.0.0.dev0'
 
 # Core classes
 from .core.barecat import Barecat
@@ -63,46 +63,46 @@ from ._api import get_cached_reader, open
 
 __all__ = [
     # Version
-    "__version__",
+    '__version__',
     # Core classes
-    "Barecat",
-    "Index",
-    "Sharder",
+    'Barecat',
+    'Index',
+    'Sharder',
     # Data types
-    "BarecatDirInfo",
-    "BarecatEntryInfo",
-    "BarecatFileInfo",
-    "Order",
-    "SHARD_SIZE_UNLIMITED",
+    'BarecatDirInfo',
+    'BarecatEntryInfo',
+    'BarecatFileInfo',
+    'Order',
+    'SHARD_SIZE_UNLIMITED',
     # File objects
-    "BarecatFileObject",
-    "BarecatReadOnlyFileObject",
-    "BarecatReadWriteFileObject",
+    'BarecatFileObject',
+    'BarecatReadOnlyFileObject',
+    'BarecatReadWriteFileObject',
     # Codec view
-    "DecodedView",
+    'DecodedView',
     # Exceptions
-    "BarecatError",
-    "BarecatIntegrityError",
-    "DirectoryNotEmptyBarecatError",
-    "FileExistsBarecatError",
-    "FileNotFoundBarecatError",
-    "FileTooLargeBarecatError",
-    "IsADirectoryBarecatError",
-    "NotADirectoryBarecatError",
-    "NotEnoughSpaceBarecatError",
+    'BarecatError',
+    'BarecatIntegrityError',
+    'DirectoryNotEmptyBarecatError',
+    'FileExistsBarecatError',
+    'FileNotFoundBarecatError',
+    'FileTooLargeBarecatError',
+    'IsADirectoryBarecatError',
+    'NotADirectoryBarecatError',
+    'NotEnoughSpaceBarecatError',
     # CLI utilities
-    "archive2barecat",
-    "barecat2archive",
-    "extract",
-    "merge",
-    "merge_symlink",
-    "read_index",
-    "write_index",
-    "get_completion_script",
+    'archive2barecat',
+    'barecat2archive',
+    'extract',
+    'merge',
+    'merge_symlink',
+    'read_index',
+    'write_index',
+    'get_completion_script',
     # Archive utilities
-    "exists",
-    "remove",
+    'exists',
+    'remove',
     # Convenience API
-    "get_cached_reader",
-    "open",
+    'get_cached_reader',
+    'open',
 ]

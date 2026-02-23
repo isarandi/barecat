@@ -1,7 +1,7 @@
 import os
 import tempfile
 import pytest
-from barecat import Barecat, BarecatFileInfo
+from barecat import Barecat
 from barecat.exceptions import FileNotFoundBarecatError, FileExistsBarecatError
 
 
@@ -143,7 +143,7 @@ class TestOpenWrite:
 
     def test_write_empty_file(self, bc_path):
         with Barecat(bc_path, readonly=False) as bc:
-            with bc.open('empty.txt', 'wb') as f:
+            with bc.open('empty.txt', 'wb') as _f:
                 pass  # Write nothing
 
         with Barecat(bc_path, readonly=True) as bc:

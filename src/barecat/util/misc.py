@@ -21,11 +21,13 @@ def remove(path):
     # SQLite can create journal, wal, and shm files
     sqlite_extras = []
     for index_path in index_paths:
-        sqlite_extras.extend([
-            f'{index_path}-journal',
-            f'{index_path}-wal',
-            f'{index_path}-shm',
-        ])
+        sqlite_extras.extend(
+            [
+                f'{index_path}-journal',
+                f'{index_path}-wal',
+                f'{index_path}-shm',
+            ]
+        )
     for p in index_paths + shard_paths + sqlite_extras:
         if osp.exists(p):
             os.remove(p)

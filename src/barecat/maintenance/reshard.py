@@ -1,4 +1,5 @@
 """Reshard a barecat archive to a different shard size limit."""
+
 from __future__ import annotations
 
 import os
@@ -98,8 +99,12 @@ def reshard(bc: Barecat, target_shard_size_limit: int):
                 else:
                     # Copy to shard0
                     barecat_copyfile.copy(
-                        old_shard_files[fi.shard], shard0_file,
-                        fi.size, src_offset=fi.offset, dst_offset=new_offset)
+                        old_shard_files[fi.shard],
+                        shard0_file,
+                        fi.size,
+                        src_offset=fi.offset,
+                        dst_offset=new_offset,
+                    )
                     bc.index.update_file(fi.path, 0, new_offset)
                 shard0_final_size = new_offset + fi.size
             else:

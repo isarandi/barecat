@@ -3,6 +3,7 @@
 This module creates identical directory structures in both the filesystem
 and a barecat archive, then compares glob results to ensure consistency.
 """
+
 import glob
 import os
 import os.path as osp
@@ -26,86 +27,70 @@ def create_test_structure(base_path, create_file_func):
         'b.txt',
         'c.py',
         'readme.md',
-
         # Single char names for ? wildcard
         'x.txt',
         'y.txt',
         'z.txt',
-
         # Bracket pattern targets [abc]
         'a.log',
         'b.log',
         'c.log',
         'd.log',  # Should NOT match [abc].log
-
         # Range pattern targets [a-c]
         'file_a.dat',
         'file_b.dat',
         'file_c.dat',
         'file_d.dat',  # Should NOT match file_[a-c].dat
-
         # Negation pattern targets [!abc]
         '1.tmp',
         '2.tmp',
         'a.tmp',  # Should NOT match [!a].tmp
-
         # Hidden files (start with .)
         '.hidden',
         '.config',
         '.gitignore',
-
         # Simple subdirectory
         'dir/file1.txt',
         'dir/file2.txt',
         'dir/file.py',
-
         # Nested subdirectory
         'dir/sub/nested.txt',
         'dir/sub/nested.py',
-
         # Deep nesting
         'dir/sub/deep/very/deep.txt',
         'dir/sub/deep/very/deep.py',
-
         # Another top-level dir
         'src/main.py',
         'src/util.py',
         'src/lib/helper.py',
         'src/lib/core.py',
-
         # Directory with hidden files
         'config/.env',
         'config/.secret',
         'config/settings.json',
-
         # Multiple extensions
         'data/file.tar.gz',
         'data/file.txt.bak',
         'data/archive.zip',
-
         # Numeric names
         'logs/1.log',
         'logs/2.log',
         'logs/10.log',
         'logs/100.log',
-
         # Mixed patterns
         'test/test_a.py',
         'test/test_b.py',
         'test/test_c.py',
         'test/helper.py',  # Doesn't match test_*.py
-
         # Same filename at different depths
         'file.txt',
         'dir/file.txt',
         'dir/sub/file.txt',
         'dir/sub/deep/file.txt',
-
         # Names with multiple dots
         'docs/api.v1.md',
         'docs/api.v2.md',
         'docs/guide.md',
-
         # Single letter directories
         'a/file.txt',
         'b/file.txt',
@@ -133,7 +118,7 @@ def normalize_glob_results(paths, base_path=''):
     """
     if base_path:
         base_path = base_path.rstrip('/') + '/'
-        paths = [p[len(base_path):] if p.startswith(base_path) else p for p in paths]
+        paths = [p[len(base_path) :] if p.startswith(base_path) else p for p in paths]
     return set(paths)
 
 
@@ -344,9 +329,7 @@ class TestGlobRecursive:
         """** - all files and dirs recursively."""
         fs_base, bc = both_structures
 
-        py_result = normalize_glob_results(
-            glob.glob(f'{fs_base}/**', recursive=True), fs_base
-        )
+        py_result = normalize_glob_results(glob.glob(f'{fs_base}/**', recursive=True), fs_base)
         bc_result = set(bc.index.glob_paths('**', recursive=True))
 
         assert bc_result == py_result
@@ -377,9 +360,7 @@ class TestGlobRecursive:
         """dir/** - everything under dir."""
         fs_base, bc = both_structures
 
-        py_result = normalize_glob_results(
-            glob.glob(f'{fs_base}/dir/**', recursive=True), fs_base
-        )
+        py_result = normalize_glob_results(glob.glob(f'{fs_base}/dir/**', recursive=True), fs_base)
         bc_result = set(bc.index.glob_paths('dir/**', recursive=True))
 
         assert bc_result == py_result
@@ -606,7 +587,7 @@ class TestGlobOnlyFiles:
         """** with only_files=True."""
         fs_base, bc = both_structures
 
-        bc_all = set(bc.index.glob_paths('**', recursive=True))
+        _bc_all = set(bc.index.glob_paths('**', recursive=True))
         bc_files_only = set(bc.index.glob_paths('**', recursive=True, only_files=True))
 
         # Should not contain any directory paths
@@ -663,9 +644,7 @@ class TestGlobSpecialPatterns:
         """**/* - all files at all depths."""
         fs_base, bc = both_structures
 
-        py_result = normalize_glob_results(
-            glob.glob(f'{fs_base}/**/*', recursive=True), fs_base
-        )
+        py_result = normalize_glob_results(glob.glob(f'{fs_base}/**/*', recursive=True), fs_base)
         bc_result = set(bc.index.glob_paths('**/*', recursive=True))
 
         assert bc_result == py_result
@@ -685,9 +664,7 @@ class TestGlobSpecialPatterns:
         """[a-c0-9].* - combined ranges."""
         fs_base, bc = both_structures
 
-        py_result = normalize_glob_results(
-            glob.glob(f'{fs_base}/[a-c0-9].*'), fs_base
-        )
+        py_result = normalize_glob_results(glob.glob(f'{fs_base}/[a-c0-9].*'), fs_base)
         bc_result = set(bc.index.glob_paths('[a-c0-9].*'))
 
         assert bc_result == py_result
@@ -707,9 +684,7 @@ class TestGlobSpecialPatterns:
         """logs/*.log - all log files."""
         fs_base, bc = both_structures
 
-        py_result = normalize_glob_results(
-            glob.glob(f'{fs_base}/logs/*.log'), fs_base
-        )
+        py_result = normalize_glob_results(glob.glob(f'{fs_base}/logs/*.log'), fs_base)
         bc_result = set(bc.index.glob_paths('logs/*.log'))
 
         assert bc_result == py_result

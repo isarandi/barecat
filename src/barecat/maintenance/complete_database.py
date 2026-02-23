@@ -9,15 +9,14 @@ Usage:
 """
 
 import os
-import shutil
 import sys
 import barecat
 
 
 def main():
     if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} <barecat-index>")
-        print(f"\nExample: {sys.argv[0]} /data/my_archive.barecat")
+        print(f'Usage: {sys.argv[0]} <barecat-index>')
+        print(f'\nExample: {sys.argv[0]} /data/my_archive.barecat')
         sys.exit(1)
 
     db_path = sys.argv[1]
@@ -32,13 +31,13 @@ def upgrade_index(db_path: str):
         os.remove(tmp_path)
 
     # Create fresh index with full schema
-    print("Step 1: Creating new index with full schema")
+    print('Step 1: Creating new index with full schema')
 
     with (
         barecat.Index(tmp_path, readonly=False) as index,
         index.no_triggers(),
     ):
-        print("Step 2: Copying files from simple index...")
+        print('Step 2: Copying files from simple index...')
         index.cursor.execute(f"ATTACH DATABASE 'file:{db_path}?mode=ro' AS sourcedb")
         index.cursor.execute(
             """
@@ -48,33 +47,33 @@ def upgrade_index(db_path: str):
             """
         )
         index.conn.commit()
-        file_count = index.cursor.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-        print(f"  Copied {file_count} files")
+        file_count = index.cursor.execute('SELECT COUNT(*) FROM files').fetchone()[0]
+        print(f'  Copied {file_count} files')
 
-        print("Step 3: Populating dirs table...")
+        print('Step 3: Populating dirs table...')
         index.update_dirs()
         index.conn.commit()
-        index.cursor.execute("DETACH DATABASE sourcedb")
+        index.cursor.execute('DETACH DATABASE sourcedb')
 
-        dir_count = index.cursor.execute("SELECT COUNT(*) FROM dirs").fetchone()[0]
-        print(f"  Created {dir_count} directories")
+        dir_count = index.cursor.execute('SELECT COUNT(*) FROM dirs').fetchone()[0]
+        print(f'  Created {dir_count} directories')
 
-        print("Step 4: Calculating tree statistics...")
+        print('Step 4: Calculating tree statistics...')
         index.update_treestats()
         index.conn.commit()
 
-        total_size = index.cursor.execute("SELECT SUM(size) FROM files").fetchone()[0] or 0
+        total_size = index.cursor.execute('SELECT SUM(size) FROM files').fetchone()[0] or 0
 
-        print(f"\nDone!")
-        print(f"  Files: {file_count}")
-        print(f"  Directories: {dir_count}")
-        print(f"  Total size: {total_size:,} bytes ({total_size / (1024**3):.2f} GB)")
+        print('\nDone!')
+        print(f'  Files: {file_count}')
+        print(f'  Directories: {dir_count}')
+        print(f'  Total size: {total_size:,} bytes ({total_size / (1024**3):.2f} GB)')
 
     # Replace old with new
     os.replace(db_path, db_path + '.bak')
     os.replace(tmp_path, db_path)
-    print(f"\nReplaced {db_path}")
+    print(f'\nReplaced {db_path}')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -10,6 +10,7 @@ Methods tried in order of preference:
 For CRC32c variants, must use buffered copy since data needs to pass through user space.
 """
 
+from enum import Enum, auto
 import ctypes
 import io
 import os
@@ -93,8 +94,9 @@ def copy(src, dst, size=None, src_offset=None, dst_offset=None, bufsize=_DEFAULT
     return _copy_buffered(ctx)
 
 
-def copy_crc32c(src, dst, size=None, src_offset=None, dst_offset=None,
-                bufsize=_DEFAULT_BUFSIZE, initial=0):
+def copy_crc32c(
+    src, dst, size=None, src_offset=None, dst_offset=None, bufsize=_DEFAULT_BUFSIZE, initial=0
+):
     """
     Copy bytes and compute CRC32c in a single pass (when possible).
 
@@ -116,8 +118,9 @@ def copy_crc32c(src, dst, size=None, src_offset=None, dst_offset=None,
     # Forward overlap - two pass (copy back-to-front, then CRC scan)
     if ctx.has_overlap and ctx.dst_offset > ctx.src_offset:
         bytes_copied = _copy_same_file_overlap(ctx)
-        crc = accumulate_crc32c(dst, size=bytes_copied, offset=ctx.dst_offset,
-                                 bufsize=bufsize, initial=initial)
+        crc = accumulate_crc32c(
+            dst, size=bytes_copied, offset=ctx.dst_offset, bufsize=bufsize, initial=initial
+        )
         return bytes_copied, crc
 
     # Single pass - copy with CRC
@@ -178,8 +181,6 @@ def write_zeroes(file, n, bufsize=_DEFAULT_BUFSIZE):
 # =============================================================================
 # Copy context - shared setup logic
 # =============================================================================
-
-from enum import Enum, auto
 
 
 class _FdType(Enum):
@@ -275,7 +276,12 @@ class _CopyContext:
 
         # Detect overlap for same-file copies
         self.has_overlap = False
-        if self.same_file and size is not None and src_offset is not None and dst_offset is not None:
+        if (
+            self.same_file
+            and size is not None
+            and src_offset is not None
+            and dst_offset is not None
+        ):
             src_end = src_offset + size
             self.has_overlap = not ((dst_offset + size <= src_offset) or (dst_offset >= src_end))
 
@@ -404,7 +410,9 @@ def _copy_file_range_loop(ctx):
     bytes_copied = 0
     while bytes_copied < ctx.size:
         n = _copy_file_range(
-            ctx.src_fd, ctx.dst_fd, ctx.size - bytes_copied,
+            ctx.src_fd,
+            ctx.dst_fd,
+            ctx.size - bytes_copied,
             ctx.src_offset + bytes_copied if ctx.src_offset is not None else None,
             ctx.dst_offset + bytes_copied if ctx.dst_offset is not None else None,
         )
@@ -493,9 +501,12 @@ else:
         _libc = ctypes.CDLL('libc.so.6', use_errno=True)
         _cfr = _libc.copy_file_range
         _cfr.argtypes = [
-            ctypes.c_int, ctypes.POINTER(ctypes.c_longlong),
-            ctypes.c_int, ctypes.POINTER(ctypes.c_longlong),
-            ctypes.c_size_t, ctypes.c_uint,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_longlong),
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_longlong),
+            ctypes.c_size_t,
+            ctypes.c_uint,
         ]
         _cfr.restype = ctypes.c_ssize_t
 
@@ -507,7 +518,8 @@ else:
                 ctypes.byref(off_in) if off_in is not None else None,
                 dst_fd,
                 ctypes.byref(off_out) if off_out is not None else None,
-                count, 0,
+                count,
+                0,
             )
             if result < 0:
                 errno = ctypes.get_errno()
@@ -536,4 +548,3 @@ def _sync_position(f):
     pos = f.tell()
     f.seek(0, os.SEEK_END)
     f.seek(pos)
-

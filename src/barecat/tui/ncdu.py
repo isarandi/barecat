@@ -1,7 +1,7 @@
 """ncdu-like disk usage viewer for barecat archives."""
+
 import curses
 import os.path as osp
-from typing import Optional
 
 import barecat
 
@@ -66,23 +66,23 @@ class BarecatDu:
     def _format_size(self, size: int) -> str:
         """Format size in human-readable form (ncdu style)."""
         if size < 1024:
-            return f"{size:5} B"
+            return f'{size:5} B'
         for unit in ['K', 'M', 'G', 'T', 'P']:
             size /= 1024
             if size < 1000:
-                return f"{size:5.1f} {unit}iB"
-        return f"{size:5.1f} EiB"
+                return f'{size:5.1f} {unit}iB'
+        return f'{size:5.1f} EiB'
 
     def _format_count(self, count: int) -> str:
         """Format file count (right-aligned, 6 chars)."""
         if count == 0:
-            return "      "
+            return '      '
         if count < 1000:
-            return f"{count:>6}"
+            return f'{count:>6}'
         elif count < 1000000:
-            return f"{count/1000:>5.1f}K"
+            return f'{count/1000:>5.1f}K'
         else:
-            return f"{count/1000000:>5.1f}M"
+            return f'{count/1000000:>5.1f}M'
 
     def _draw(self, stdscr):
         """Draw the interface."""
@@ -91,9 +91,9 @@ class BarecatDu:
 
         # Header
         header = f"--- {self.archive_path}: {self.cwd or '/'} "
-        header += "-" * (width - len(header) - 1)
+        header += '-' * (width - len(header) - 1)
         try:
-            stdscr.addnstr(0, 0, header[:width-1], width-1)
+            stdscr.addnstr(0, 0, header[: width - 1], width - 1)
         except curses.error:
             pass
 
@@ -107,8 +107,10 @@ class BarecatDu:
         # Column headers (aligned with data columns)
         try:
             stdscr.addnstr(1, 0, f"{'Size':>{size_col_width}}", size_col_width, curses.A_DIM)
-            stdscr.addnstr(1, size_col_width, f"{'Files':>{count_col_width}}", count_col_width, curses.A_DIM)
-            stdscr.addnstr(1, name_start, "Name", width - name_start - 1, curses.A_DIM)
+            stdscr.addnstr(
+                1, size_col_width, f"{'Files':>{count_col_width}}", count_col_width, curses.A_DIM
+            )
+            stdscr.addnstr(1, name_start, 'Name', width - name_start - 1, curses.A_DIM)
         except curses.error:
             pass
 
@@ -120,7 +122,7 @@ class BarecatDu:
             self.scroll_offset = self.cursor - visible_height + 1
 
         for i, (name, size, count, is_dir) in enumerate(
-            self.entries[self.scroll_offset:self.scroll_offset + visible_height]
+            self.entries[self.scroll_offset : self.scroll_offset + visible_height]
         ):
             y = i + 2  # +2 for header and column header
             if y >= height - 1:
@@ -132,9 +134,16 @@ class BarecatDu:
             # Special handling for ..
             if name == '..':
                 try:
-                    stdscr.addnstr(y, 0, " " * (size_col_width + count_col_width + bar_width + 2),
-                                  size_col_width + count_col_width + bar_width + 2, attr)
-                    stdscr.addnstr(y, name_start, "/..", width - name_start - 1, attr | curses.A_BOLD)
+                    stdscr.addnstr(
+                        y,
+                        0,
+                        ' ' * (size_col_width + count_col_width + bar_width + 2),
+                        size_col_width + count_col_width + bar_width + 2,
+                        attr,
+                    )
+                    stdscr.addnstr(
+                        y, name_start, '/..', width - name_start - 1, attr | curses.A_BOLD
+                    )
                 except curses.error:
                     pass
                 continue
@@ -158,26 +167,31 @@ class BarecatDu:
                 bar_fill = int(bar_width * size / total_size)
             else:
                 bar_fill = 0
-            bar = "[" + "#" * bar_fill + " " * (bar_width - bar_fill) + "]"
+            bar = '[' + '#' * bar_fill + ' ' * (bar_width - bar_fill) + ']'
             try:
                 stdscr.addnstr(y, size_col_width + count_col_width, bar, bar_width + 2, attr)
             except curses.error:
                 pass
 
             # Name
-            display_name = ("/" + name) if is_dir else ("  " + name)
+            display_name = ('/' + name) if is_dir else ('  ' + name)
             try:
-                stdscr.addnstr(y, name_start, display_name[:width - name_start - 1],
-                              width - name_start - 1, attr | (curses.A_BOLD if is_dir else 0))
+                stdscr.addnstr(
+                    y,
+                    name_start,
+                    display_name[: width - name_start - 1],
+                    width - name_start - 1,
+                    attr | (curses.A_BOLD if is_dir else 0),
+                )
             except curses.error:
                 pass
 
         # Footer with total
         total_count = self._get_total_count()
-        total_str = f" Total: {self._format_size(total_size)} | {total_count} files"
-        total_str += " | q:quit  h/<-:back  l/->:enter  j/k:move"
+        total_str = f' Total: {self._format_size(total_size)} | {total_count} files'
+        total_str += ' | q:quit  h/<-:back  l/->:enter  j/k:move'
         try:
-            stdscr.addnstr(height - 1, 0, total_str[:width-1], width-1, curses.A_REVERSE)
+            stdscr.addnstr(height - 1, 0, total_str[: width - 1], width - 1, curses.A_REVERSE)
         except curses.error:
             pass
 
@@ -289,6 +303,7 @@ class BarecatDu:
 def main():
     """Entry point for barecat-du command."""
     import argparse
+
     parser = argparse.ArgumentParser(
         description='ncdu-like disk usage viewer for barecat archives'
     )

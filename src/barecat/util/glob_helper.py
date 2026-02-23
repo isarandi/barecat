@@ -15,7 +15,10 @@ else:
 
 from ..exceptions import FileNotFoundBarecatError
 from ..util.glob_to_regex import (
-    glob_to_regex, glob_to_sqlite, expand_doublestar, pattern_to_sql_exclude
+    glob_to_regex,
+    glob_to_sqlite,
+    expand_doublestar,
+    pattern_to_sql_exclude,
 )
 from ..core.paths import normalize_path
 
@@ -66,7 +69,7 @@ class GlobHelper:
         params = {f'p{i}': p for i, p in enumerate(patterns)}
         glob_expr = ' OR '.join(f'path GLOB :p{i}' for i in range(len(patterns)))
         if only_files:
-            query = f"SELECT DISTINCT path FROM files WHERE {glob_expr}"
+            query = f'SELECT DISTINCT path FROM files WHERE {glob_expr}'
         else:
             query = f"""
                 SELECT DISTINCT path FROM (
@@ -477,8 +480,7 @@ class GlobHelper:
 
         # Precompute regex patterns for Python filtering
         rule_regexes = [
-            (sign, glob_to_regex(p, recursive='**' in p, include_hidden=True))
-            for sign, p in rules
+            (sign, glob_to_regex(p, recursive='**' in p, include_hidden=True)) for sign, p in rules
         ]
 
         fquery = f"""
@@ -499,9 +501,7 @@ class GlobHelper:
                    mode, uid, gid, mtime_ns
             FROM dirs WHERE {sql_expr}
             """
-        for info in self._index.fetch_iter(
-            dquery, params, bufsize=bufsize, rowcls=BarecatDirInfo
-        ):
+        for info in self._index.fetch_iter(dquery, params, bufsize=bufsize, rowcls=BarecatDirInfo):
             if self._first_match_wins(info.path, rule_regexes, default_include):
                 yield info
 

@@ -8,6 +8,7 @@ Supports:
     barecat rsync arch1.barecat:: arch2.barecat:: dest.barecat::  # merge
     barecat rsync --delete src/ archive.barecat::  # sync with deletion
 """
+
 import os
 import os.path as osp
 import fnmatch
@@ -19,15 +20,14 @@ from enum import Enum
 from typing import Optional
 
 import barecat
-from ..core.paths import resolve_index_path
 from ..util.misc import exists as barecat_exists
 
 
 class PathType(Enum):
-    LOCAL = 'local'           # Local file/directory
+    LOCAL = 'local'  # Local file/directory
     LOCAL_ARCHIVE = 'local_archive'  # Local barecat archive
-    TAR_ZIP = 'tar_zip'       # Local tar/zip archive (read-only source)
-    SSH = 'ssh'               # Remote via SSH
+    TAR_ZIP = 'tar_zip'  # Local tar/zip archive (read-only source)
+    SSH = 'ssh'  # Remote via SSH
     SSH_ARCHIVE = 'ssh_archive'  # Remote barecat archive via SSH
     BARECAT_SERVER = 'barecat_server'  # Barecat serve-remote
 
@@ -40,13 +40,14 @@ ZIP_EXTENSIONS = ('.zip',)
 @dataclass
 class ParsedPath:
     """Parsed source or destination path."""
+
     path_type: PathType
-    host: Optional[str]          # SSH host or barecat server host:port
-    user: Optional[str]          # SSH user (optional)
-    filesystem_path: str         # Path on filesystem (local or remote)
+    host: Optional[str]  # SSH host or barecat server host:port
+    user: Optional[str]  # SSH user (optional)
+    filesystem_path: str  # Path on filesystem (local or remote)
     archive_path: Optional[str]  # Path to .barecat archive (None if not archive)
-    inner_path: str              # Path within archive (empty if not archive)
-    trailing_slash: bool         # Whether path had trailing slash
+    inner_path: str  # Path within archive (empty if not archive)
+    trailing_slash: bool  # Whether path had trailing slash
 
     @property
     def contents_mode(self) -> bool:
@@ -57,7 +58,10 @@ class ParsedPath:
     def is_archive(self) -> bool:
         """True if this is a barecat archive path."""
         return self.path_type in (
-            PathType.LOCAL_ARCHIVE, PathType.SSH_ARCHIVE, PathType.BARECAT_SERVER)
+            PathType.LOCAL_ARCHIVE,
+            PathType.SSH_ARCHIVE,
+            PathType.BARECAT_SERVER,
+        )
 
     @property
     def is_tar_zip(self) -> bool:
@@ -67,8 +71,7 @@ class ParsedPath:
     @property
     def is_remote(self) -> bool:
         """True if this is a remote path (SSH or barecat server)."""
-        return self.path_type in (
-            PathType.SSH, PathType.SSH_ARCHIVE, PathType.BARECAT_SERVER)
+        return self.path_type in (PathType.SSH, PathType.SSH_ARCHIVE, PathType.BARECAT_SERVER)
 
     @property
     def archive_basename(self) -> str:
@@ -83,21 +86,22 @@ class ParsedPath:
 @dataclass
 class RsyncOptions:
     """rsync-like options."""
-    delete: bool = False          # --delete: remove extraneous files from dest
-    dry_run: bool = False         # -n, --dry-run: show what would be done
-    verbose: bool = False         # -v, --verbose: increase verbosity
-    progress: bool = False        # --progress: show progress
-    checksum: bool = False        # -c, --checksum: compare by checksum (barecat→barecat only)
-    update: bool = False          # -u, --update: skip files newer on dest
-    ignore_existing: bool = False # --ignore-existing: skip files that exist on dest
-    existing: bool = False        # --existing: only update existing files, skip new
-    size_only: bool = False       # --size-only: compare by size only, not mtime
-    times: bool = True            # -t, --times: preserve modification times (default True)
-    max_size: int = None          # --max-size: skip files larger than this
-    min_size: int = None          # --min-size: skip files smaller than this
-    include: list = None          # --include patterns
-    exclude: list = None          # --exclude patterns
-    recursive: bool = True        # -r (default True for dirs)
+
+    delete: bool = False  # --delete: remove extraneous files from dest
+    dry_run: bool = False  # -n, --dry-run: show what would be done
+    verbose: bool = False  # -v, --verbose: increase verbosity
+    progress: bool = False  # --progress: show progress
+    checksum: bool = False  # -c, --checksum: compare by checksum (barecat→barecat only)
+    update: bool = False  # -u, --update: skip files newer on dest
+    ignore_existing: bool = False  # --ignore-existing: skip files that exist on dest
+    existing: bool = False  # --existing: only update existing files, skip new
+    size_only: bool = False  # --size-only: compare by size only, not mtime
+    times: bool = True  # -t, --times: preserve modification times (default True)
+    max_size: int = None  # --max-size: skip files larger than this
+    min_size: int = None  # --min-size: skip files smaller than this
+    include: list = None  # --include patterns
+    exclude: list = None  # --exclude patterns
+    recursive: bool = True  # -r (default True for dirs)
 
     def __post_init__(self):
         self.include = self.include or []
@@ -126,15 +130,17 @@ def rsync(sources: list[str], dest: str, options: RsyncOptions = None):
     parsed_dest = parse_path(dest)
 
     # Validate: can't have local dir -> local dir (use regular rsync)
-    if all(s.path_type == PathType.LOCAL for s in parsed_sources) and \
-       parsed_dest.path_type == PathType.LOCAL:
-        raise ValueError("Use regular rsync for local-to-local directory sync")
+    if (
+        all(s.path_type == PathType.LOCAL for s in parsed_sources)
+        and parsed_dest.path_type == PathType.LOCAL
+    ):
+        raise ValueError('Use regular rsync for local-to-local directory sync')
 
     # SSH directories not yet supported (only SSH archives)
     if parsed_dest.path_type == PathType.SSH:
-        raise NotImplementedError("SSH directory destinations not yet supported (use archive)")
+        raise NotImplementedError('SSH directory destinations not yet supported (use archive)')
     if any(s.path_type == PathType.SSH for s in parsed_sources):
-        raise NotImplementedError("SSH directory sources not yet supported (use archive)")
+        raise NotImplementedError('SSH directory sources not yet supported (use archive)')
 
     # Determine operation type
     if parsed_dest.is_archive:
@@ -172,7 +178,7 @@ def _rsync_to_archive(sources: list[ParsedPath], dest: ParsedPath, options: Rsyn
             elif src.is_archive:
                 _sync_archive_to_archive(src, dest_bc, dest_prefix, options)
             else:
-                raise NotImplementedError(f"Source type {src.path_type} not yet supported")
+                raise NotImplementedError(f'Source type {src.path_type} not yet supported')
 
         if options.delete and dest_bc is not None:
             _delete_extraneous_in_archive(sources, dest_bc, dest_prefix, options)
@@ -193,7 +199,7 @@ def _rsync_to_local(sources: list[ParsedPath], dest: ParsedPath, options: RsyncO
         elif src.is_tar_zip:
             _sync_tarzip_to_local(src, dest_dir, options)
         else:
-            raise ValueError("Use regular rsync for local-to-local sync")
+            raise ValueError('Use regular rsync for local-to-local sync')
 
     if options.delete:
         _delete_extraneous_local(sources, dest_dir, options)
@@ -202,6 +208,7 @@ def _rsync_to_local(sources: list[ParsedPath], dest: ParsedPath, options: RsyncO
 # -----------------------------------------------------------------------------
 # Parsing and utility functions
 # -----------------------------------------------------------------------------
+
 
 def _find_unescaped(s: str, needle: str) -> int:
     """Find first occurrence of needle not preceded by odd number of backslashes.
@@ -237,7 +244,7 @@ def _unescape(s: str) -> str:
             if next_char == '\\':
                 result.append('\\')
                 i += 2
-            elif i + 2 < len(s) and s[i + 1:i + 3] == '::':
+            elif i + 2 < len(s) and s[i + 1 : i + 3] == '::':
                 result.append('::')
                 i += 3
             else:
@@ -276,18 +283,18 @@ def parse_path(path: str) -> ParsedPath:
 
     # Check for barecat:// protocol
     if path.startswith('barecat://'):
-        rest = path[len('barecat://'):]
+        rest = path[len('barecat://') :]
         # Format: host:port/archive::inner
         slash_idx = rest.find('/')
         if slash_idx == -1:
-            raise ValueError(f"Invalid barecat:// URL: {path}")
+            raise ValueError(f'Invalid barecat:// URL: {path}')
         host = rest[:slash_idx]
-        rest = rest[slash_idx + 1:]
+        rest = rest[slash_idx + 1 :]
 
         delim_idx = _find_unescaped(rest, '::')
         if delim_idx != -1:
             archive_name = _unescape(rest[:delim_idx])
-            inner_path = _unescape(rest[delim_idx + 2:])
+            inner_path = _unescape(rest[delim_idx + 2 :])
         else:
             archive_name = _unescape(rest)
             inner_path = ''
@@ -314,7 +321,7 @@ def parse_path(path: str) -> ParsedPath:
         delim_idx = _find_unescaped(remote_path, '::')
         if delim_idx != -1:
             archive_path = _unescape(remote_path[:delim_idx])
-            inner_path = _unescape(remote_path[delim_idx + 2:])
+            inner_path = _unescape(remote_path[delim_idx + 2 :])
             return ParsedPath(
                 path_type=PathType.SSH_ARCHIVE,
                 host=host,
@@ -339,7 +346,7 @@ def parse_path(path: str) -> ParsedPath:
     delim_idx = _find_unescaped(path, '::')
     if delim_idx != -1:
         archive_path = _unescape(path[:delim_idx])
-        inner_path = _unescape(path[delim_idx + 2:])
+        inner_path = _unescape(path[delim_idx + 2 :])
         lower_archive = archive_path.lower()
 
         # Check if it's a tar/zip archive
@@ -391,8 +398,8 @@ def _open_archive(parsed: ParsedPath, readonly: bool):
             from ..distributed.remote import BarecatRemoteClient
         except ImportError:
             raise ImportError(
-                "Remote rsync requires the distributed module. "
-                "Install barecat from the dev branch for this feature."
+                'Remote rsync requires the distributed module. '
+                'Install barecat from the dev branch for this feature.'
             )
         host_port = parsed.host
         if ':' in host_port:
@@ -407,8 +414,8 @@ def _open_archive(parsed: ParsedPath, readonly: bool):
             from ..distributed.ssh import SSHBarecatClient
         except ImportError:
             raise ImportError(
-                "SSH rsync requires the distributed module. "
-                "Install barecat from the dev branch for this feature."
+                'SSH rsync requires the distributed module. '
+                'Install barecat from the dev branch for this feature.'
             )
         return SSHBarecatClient(
             host=parsed.host,
@@ -418,7 +425,7 @@ def _open_archive(parsed: ParsedPath, readonly: bool):
         )
 
     else:
-        raise ValueError(f"Cannot open archive for path type: {parsed.path_type}")
+        raise ValueError(f'Cannot open archive for path type: {parsed.path_type}')
 
 
 def _get_file_infos(archive, pattern: str):
@@ -456,11 +463,9 @@ def _lookup_file(archive, path: str):
 # Sync implementation functions
 # -----------------------------------------------------------------------------
 
+
 def _sync_local_to_archive(
-    src: ParsedPath,
-    dest_bc: barecat.Barecat,
-    dest_prefix: str,
-    options: RsyncOptions
+    src: ParsedPath, dest_bc: barecat.Barecat, dest_prefix: str, options: RsyncOptions
 ):
     """Sync local directory/file to archive."""
     from ..util.progbar import progressbar
@@ -468,7 +473,7 @@ def _sync_local_to_archive(
     src_path = src.filesystem_path
 
     if not osp.exists(src_path):
-        raise FileNotFoundError(f"Source not found: {src_path}")
+        raise FileNotFoundError(f'Source not found: {src_path}')
 
     # Determine destination prefix based on trailing slash
     if src.contents_mode:
@@ -497,7 +502,7 @@ def _sync_local_to_archive(
                 file_list.append((local_path, archive_path))
 
         if options.progress:
-            file_list = progressbar(file_list, desc="Adding", unit="files")
+            file_list = progressbar(file_list, desc='Adding', unit='files')
 
         for local_path, archive_path in file_list:
             _sync_one_file_to_archive(local_path, archive_path, dest_bc, options)
@@ -507,7 +512,7 @@ def _sync_one_file_to_archive(
     local_path: str,
     archive_path: str,
     dest_bc,  # Optional[barecat.Barecat] - None in dry-run when archive doesn't exist
-    options: RsyncOptions
+    options: RsyncOptions,
 ):
     """Sync a single file from local to archive."""
     from ..core.types import BarecatFileInfo
@@ -527,13 +532,13 @@ def _sync_one_file_to_archive(
     # --existing: only update files that already exist
     if options.existing and not exists:
         if options.verbose:
-            print(f"skip (new): {archive_path}")
+            print(f'skip (new): {archive_path}')
         return
 
     # --ignore-existing: skip files that exist
     if options.ignore_existing and exists:
         if options.verbose:
-            print(f"skip (exists): {archive_path}")
+            print(f'skip (exists): {archive_path}')
         return
 
     if exists:
@@ -543,7 +548,7 @@ def _sync_one_file_to_archive(
             # Skip if dest is newer
             if dest_info.mtime_ns and dest_info.mtime_ns / 1e9 >= src_stat.st_mtime:
                 if options.verbose:
-                    print(f"skip (newer): {archive_path}")
+                    print(f'skip (newer): {archive_path}')
                 return
 
         # Note: --checksum only compares checksums for barecat→barecat
@@ -553,14 +558,16 @@ def _sync_one_file_to_archive(
                 # Compare by size only
                 if dest_info.size == src_stat.st_size:
                     if options.verbose:
-                        print(f"skip (same size): {archive_path}")
+                        print(f'skip (same size): {archive_path}')
                     return
             else:
                 # Compare size and mtime
-                if (dest_info.size == src_stat.st_size and
-                    dest_info.mtime_ns == src_stat.st_mtime_ns):
+                if (
+                    dest_info.size == src_stat.st_size
+                    and dest_info.mtime_ns == src_stat.st_mtime_ns
+                ):
                     if options.verbose:
-                        print(f"skip (unchanged): {archive_path}")
+                        print(f'skip (unchanged): {archive_path}')
                     return
 
     if options.dry_run:
@@ -589,7 +596,7 @@ def _sync_tarzip_to_archive(
     src: ParsedPath,
     dest_bc,  # Optional - None in dry-run when archive doesn't exist
     dest_prefix: str,
-    options: RsyncOptions
+    options: RsyncOptions,
 ):
     """Sync tar/zip archive to barecat archive."""
     from ..formats.archive_formats import iter_archive
@@ -599,7 +606,7 @@ def _sync_tarzip_to_archive(
     src_inner = src.inner_path  # Inner path within tar/zip
 
     if not osp.exists(src_path):
-        raise FileNotFoundError(f"Source not found: {src_path}")
+        raise FileNotFoundError(f'Source not found: {src_path}')
 
     # Determine destination prefix based on trailing slash
     if src.contents_mode:
@@ -614,7 +621,7 @@ def _sync_tarzip_to_archive(
             # Strip archive extensions
             for ext in TAR_EXTENSIONS + ZIP_EXTENSIONS:
                 if basename.lower().endswith(ext):
-                    basename = basename[:-len(ext)]
+                    basename = basename[: -len(ext)]
                     break
         prefix = osp.join(dest_prefix, basename) if dest_prefix else basename
 
@@ -629,7 +636,7 @@ def _sync_tarzip_to_archive(
                     fileobj.read()  # Must consume
                 continue
             # Compute relative path from inner path
-            rel_path = src_info.path[len(src_inner):].lstrip('/')
+            rel_path = src_info.path[len(src_inner) :].lstrip('/')
         else:
             rel_path = src_info.path
 
@@ -658,7 +665,7 @@ def _sync_tarzip_to_archive(
         # --existing: only update files that already exist
         if options.existing and not exists:
             if options.verbose:
-                print(f"skip (new): {dest_path}")
+                print(f'skip (new): {dest_path}')
             if fileobj:
                 fileobj.read()
             continue
@@ -666,7 +673,7 @@ def _sync_tarzip_to_archive(
         # --ignore-existing: skip files that exist
         if options.ignore_existing and exists:
             if options.verbose:
-                print(f"skip (exists): {dest_path}")
+                print(f'skip (exists): {dest_path}')
             if fileobj:
                 fileobj.read()
             continue
@@ -675,9 +682,13 @@ def _sync_tarzip_to_archive(
             dest_info = _lookup_file(dest_bc, dest_path)
 
             if options.update:
-                if dest_info.mtime_ns and src_info.mtime_ns and dest_info.mtime_ns >= src_info.mtime_ns:
+                if (
+                    dest_info.mtime_ns
+                    and src_info.mtime_ns
+                    and dest_info.mtime_ns >= src_info.mtime_ns
+                ):
                     if options.verbose:
-                        print(f"skip (newer): {dest_path}")
+                        print(f'skip (newer): {dest_path}')
                     if fileobj:
                         fileobj.read()
                     continue
@@ -687,14 +698,14 @@ def _sync_tarzip_to_archive(
                 if options.size_only:
                     if src_info.size == dest_info.size:
                         if options.verbose:
-                            print(f"skip (same size): {dest_path}")
+                            print(f'skip (same size): {dest_path}')
                         if fileobj:
                             fileobj.read()
                         continue
                 else:
                     if src_info.size == dest_info.size and src_info.mtime_ns == dest_info.mtime_ns:
                         if options.verbose:
-                            print(f"skip (unchanged): {dest_path}")
+                            print(f'skip (unchanged): {dest_path}')
                         if fileobj:
                             fileobj.read()
                         continue
@@ -751,11 +762,11 @@ def _sync_archive_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions
             out_dir = osp.join(dest_dir, basename)
 
         # Iterate files with metadata (works for both local and remote)
-        pattern = f"{src_prefix}/**" if src_prefix else "**"
+        pattern = f'{src_prefix}/**' if src_prefix else '**'
         infos = _get_file_infos(src_bc, pattern)
 
         if options.progress:
-            infos = progressbar(infos, desc="Extracting", unit="files")
+            infos = progressbar(infos, desc='Extracting', unit='files')
 
         for info in infos:
             if not info.isfile():  # skip directories
@@ -765,7 +776,7 @@ def _sync_archive_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions
 
             # Compute relative path
             if src_prefix:
-                rel_path = info.path[len(src_prefix):].lstrip('/')
+                rel_path = info.path[len(src_prefix) :].lstrip('/')
             else:
                 rel_path = info.path
 
@@ -777,7 +788,7 @@ def _sync_one_file_to_local(
     src_bc,  # Barecat, SSHBarecatClient, or BarecatRemoteClient
     src_info,  # BarecatFileInfo, SSHFileInfo, or RemoteFileInfo
     local_path: str,
-    options: RsyncOptions
+    options: RsyncOptions,
 ):
     """Sync a single file from archive to local."""
 
@@ -792,13 +803,13 @@ def _sync_one_file_to_local(
     # --existing: only update files that already exist
     if options.existing and not exists:
         if options.verbose:
-            print(f"skip (new): {local_path}")
+            print(f'skip (new): {local_path}')
         return
 
     # --ignore-existing: skip files that exist
     if options.ignore_existing and exists:
         if options.verbose:
-            print(f"skip (exists): {local_path}")
+            print(f'skip (exists): {local_path}')
         return
 
     if exists:
@@ -806,7 +817,7 @@ def _sync_one_file_to_local(
             dest_mtime = osp.getmtime(local_path)
             if src_info.mtime_ns and dest_mtime >= src_info.mtime_ns / 1e9:
                 if options.verbose:
-                    print(f"skip (newer): {local_path}")
+                    print(f'skip (newer): {local_path}')
                 return
 
         # Note: --checksum only compares checksums for barecat→barecat
@@ -816,21 +827,22 @@ def _sync_one_file_to_local(
             if options.size_only:
                 if src_info.size == dest_stat.st_size:
                     if options.verbose:
-                        print(f"skip (same size): {local_path}")
+                        print(f'skip (same size): {local_path}')
                     return
             else:
-                if (src_info.size == dest_stat.st_size and
-                    src_info.mtime_ns == int(dest_stat.st_mtime_ns)):
+                if src_info.size == dest_stat.st_size and src_info.mtime_ns == int(
+                    dest_stat.st_mtime_ns
+                ):
                     if options.verbose:
-                        print(f"skip (unchanged): {local_path}")
+                        print(f'skip (unchanged): {local_path}')
                     return
 
     if options.dry_run:
-        print(f"would extract: {local_path}")
+        print(f'would extract: {local_path}')
         return
 
     if options.verbose:
-        print(f"extract: {local_path}")
+        print(f'extract: {local_path}')
 
     os.makedirs(osp.dirname(local_path), exist_ok=True)
     with src_bc.open(src_info.path, 'rb') as src_f, open(local_path, 'wb') as dst_f:
@@ -849,7 +861,7 @@ def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions)
     src_inner = src.inner_path  # Inner path within tar/zip
 
     if not osp.exists(src_path):
-        raise FileNotFoundError(f"Source not found: {src_path}")
+        raise FileNotFoundError(f'Source not found: {src_path}')
 
     # Determine destination based on trailing slash
     if src.contents_mode:
@@ -863,7 +875,7 @@ def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions)
             basename = osp.basename(src_path)
             for ext in TAR_EXTENSIONS + ZIP_EXTENSIONS:
                 if basename.lower().endswith(ext):
-                    basename = basename[:-len(ext)]
+                    basename = basename[: -len(ext)]
                     break
         out_dir = osp.join(dest_dir, basename)
 
@@ -878,7 +890,7 @@ def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions)
                     fileobj.read()  # Must consume
                 continue
             # Compute relative path from inner path
-            rel_path = src_info.path[len(src_inner):].lstrip('/')
+            rel_path = src_info.path[len(src_inner) :].lstrip('/')
         else:
             rel_path = src_info.path
 
@@ -903,7 +915,7 @@ def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions)
         # --existing: only update files that already exist
         if options.existing and not exists:
             if options.verbose:
-                print(f"skip (new): {local_path}")
+                print(f'skip (new): {local_path}')
             if fileobj:
                 fileobj.read()
             continue
@@ -911,7 +923,7 @@ def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions)
         # --ignore-existing: skip files that exist
         if options.ignore_existing and exists:
             if options.verbose:
-                print(f"skip (exists): {local_path}")
+                print(f'skip (exists): {local_path}')
             if fileobj:
                 fileobj.read()
             continue
@@ -921,7 +933,7 @@ def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions)
                 dest_mtime = osp.getmtime(local_path)
                 if src_info.mtime_ns and dest_mtime >= src_info.mtime_ns / 1e9:
                     if options.verbose:
-                        print(f"skip (newer): {local_path}")
+                        print(f'skip (newer): {local_path}')
                     if fileobj:
                         fileobj.read()
                     continue
@@ -931,27 +943,28 @@ def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions)
                 if options.size_only:
                     if src_info.size == dest_stat.st_size:
                         if options.verbose:
-                            print(f"skip (same size): {local_path}")
+                            print(f'skip (same size): {local_path}')
                         if fileobj:
                             fileobj.read()
                         continue
                 else:
-                    if (src_info.size == dest_stat.st_size and
-                        src_info.mtime_ns == int(dest_stat.st_mtime_ns)):
+                    if src_info.size == dest_stat.st_size and src_info.mtime_ns == int(
+                        dest_stat.st_mtime_ns
+                    ):
                         if options.verbose:
-                            print(f"skip (unchanged): {local_path}")
+                            print(f'skip (unchanged): {local_path}')
                         if fileobj:
                             fileobj.read()
                         continue
 
         if options.dry_run:
-            print(f"would extract: {local_path}")
+            print(f'would extract: {local_path}')
             if fileobj:
                 fileobj.read()
             continue
 
         if options.verbose:
-            print(f"extract: {local_path}")
+            print(f'extract: {local_path}')
 
         os.makedirs(osp.dirname(local_path), exist_ok=True)
         with open(local_path, 'wb') as f:
@@ -968,7 +981,7 @@ def _sync_archive_to_archive(
     src: ParsedPath,
     dest_bc,  # Optional - None in dry-run when archive doesn't exist
     dest_prefix: str,
-    options: RsyncOptions
+    options: RsyncOptions,
 ):
     """Sync from one archive to another (merge). Source can be local or remote."""
 
@@ -986,7 +999,7 @@ def _sync_archive_to_archive(
             prefix = osp.join(dest_prefix, basename) if dest_prefix else basename
 
         # Iterate source files with metadata (works for both local and remote)
-        pattern = f"{src_prefix}/**" if src_prefix else "**"
+        pattern = f'{src_prefix}/**' if src_prefix else '**'
         for src_info in _get_file_infos(src_bc, pattern):
             if not src_info.isfile():
                 continue
@@ -1001,7 +1014,7 @@ def _sync_archive_to_archive(
 
             # Compute destination path
             if src_prefix:
-                rel_path = src_info.path[len(src_prefix):].lstrip('/')
+                rel_path = src_info.path[len(src_prefix) :].lstrip('/')
             else:
                 rel_path = src_info.path
 
@@ -1014,13 +1027,13 @@ def _sync_archive_to_archive(
             # --existing: only update files that already exist
             if options.existing and not exists:
                 if options.verbose:
-                    print(f"skip (new): {dest_path}")
+                    print(f'skip (new): {dest_path}')
                 continue
 
             # --ignore-existing: skip files that exist
             if options.ignore_existing and exists:
                 if options.verbose:
-                    print(f"skip (exists): {dest_path}")
+                    print(f'skip (exists): {dest_path}')
                 continue
 
             if exists:
@@ -1028,28 +1041,35 @@ def _sync_archive_to_archive(
 
                 if options.update:
                     # Skip if dest is newer
-                    if dest_info.mtime_ns and src_info.mtime_ns and dest_info.mtime_ns >= src_info.mtime_ns:
+                    if (
+                        dest_info.mtime_ns
+                        and src_info.mtime_ns
+                        and dest_info.mtime_ns >= src_info.mtime_ns
+                    ):
                         if options.verbose:
-                            print(f"skip (newer): {dest_path}")
+                            print(f'skip (newer): {dest_path}')
                         continue
 
                 if options.checksum:
                     # Compare by checksum (both sides have crc32c in database)
                     if src_info.crc32c == dest_info.crc32c:
                         if options.verbose:
-                            print(f"skip (checksum match): {dest_path}")
+                            print(f'skip (checksum match): {dest_path}')
                         continue
                 else:
                     if options.size_only:
                         if src_info.size == dest_info.size:
                             if options.verbose:
-                                print(f"skip (same size): {dest_path}")
+                                print(f'skip (same size): {dest_path}')
                             continue
                     else:
                         # Compare size and mtime
-                        if src_info.size == dest_info.size and src_info.mtime_ns == dest_info.mtime_ns:
+                        if (
+                            src_info.size == dest_info.size
+                            and src_info.mtime_ns == dest_info.mtime_ns
+                        ):
                             if options.verbose:
-                                print(f"skip (unchanged): {dest_path}")
+                                print(f'skip (unchanged): {dest_path}')
                             continue
 
             if options.dry_run:
@@ -1061,6 +1081,7 @@ def _sync_archive_to_archive(
 
             # Create file info with metadata from source
             from ..core.types import BarecatFileInfo
+
             finfo = BarecatFileInfo(
                 path=dest_path,
                 size=src_info.size,
@@ -1081,7 +1102,7 @@ def _delete_extraneous_in_archive(
     sources: list[ParsedPath],
     dest_bc,  # Barecat (destination is always local/writable for now)
     dest_prefix: str,
-    options: RsyncOptions
+    options: RsyncOptions,
 ):
     """Delete files in dest archive not present in sources."""
     # Build set of expected files
@@ -1108,6 +1129,7 @@ def _delete_extraneous_in_archive(
         elif src.is_tar_zip:
             # Tar/zip source
             from ..formats.archive_formats import iter_archive_nocontent
+
             src_path = src.filesystem_path
             src_inner = src.inner_path
 
@@ -1120,7 +1142,7 @@ def _delete_extraneous_in_archive(
                     basename = osp.basename(src_path)
                     for ext in TAR_EXTENSIONS + ZIP_EXTENSIONS:
                         if basename.lower().endswith(ext):
-                            basename = basename[:-len(ext)]
+                            basename = basename[: -len(ext)]
                             break
                 prefix = osp.join(dest_prefix, basename) if dest_prefix else basename
 
@@ -1131,7 +1153,7 @@ def _delete_extraneous_in_archive(
                 if src_inner:
                     if not (info.path == src_inner or info.path.startswith(src_inner + '/')):
                         continue
-                    rel_path = info.path[len(src_inner):].lstrip('/')
+                    rel_path = info.path[len(src_inner) :].lstrip('/')
                 else:
                     rel_path = info.path
                 archive_path = osp.join(prefix, rel_path) if prefix else rel_path
@@ -1150,38 +1172,31 @@ def _delete_extraneous_in_archive(
                 prefix = osp.join(dest_prefix, basename) if dest_prefix else basename
 
             with _open_archive(src, readonly=True) as src_bc:
-                pattern = f"{src_prefix}/**" if src_prefix else "**"
+                pattern = f'{src_prefix}/**' if src_prefix else '**'
                 for info in _get_file_infos(src_bc, pattern):
                     if not info.isfile():
                         continue
                     if src_prefix:
-                        rel_path = info.path[len(src_prefix):].lstrip('/')
+                        rel_path = info.path[len(src_prefix) :].lstrip('/')
                     else:
                         rel_path = info.path
                     archive_path = osp.join(prefix, rel_path) if prefix else rel_path
                     expected.add(archive_path.lstrip('/'))
 
     # Find and delete extraneous
-    pattern = f"{dest_prefix}/**" if dest_prefix else "**"
-    existing = set(
-        info.path for info in _get_file_infos(dest_bc, pattern)
-        if info.isfile()
-    )
+    pattern = f'{dest_prefix}/**' if dest_prefix else '**'
+    existing = set(info.path for info in _get_file_infos(dest_bc, pattern) if info.isfile())
 
     for path in existing - expected:
         if options.dry_run:
-            print(f"would delete: {path}")
+            print(f'would delete: {path}')
         else:
             if options.verbose:
-                print(f"delete: {path}")
+                print(f'delete: {path}')
             del dest_bc[path]
 
 
-def _delete_extraneous_local(
-    sources: list[ParsedPath],
-    dest_dir: str,
-    options: RsyncOptions
-):
+def _delete_extraneous_local(sources: list[ParsedPath], dest_dir: str, options: RsyncOptions):
     """Delete local files not present in archive sources (local, remote, or tar/zip)."""
     expected = set()
 
@@ -1189,6 +1204,7 @@ def _delete_extraneous_local(
         if src.is_tar_zip:
             # Tar/zip source
             from ..formats.archive_formats import iter_archive_nocontent
+
             src_path = src.filesystem_path
             src_inner = src.inner_path
 
@@ -1201,7 +1217,7 @@ def _delete_extraneous_local(
                     basename = osp.basename(src_path)
                     for ext in TAR_EXTENSIONS + ZIP_EXTENSIONS:
                         if basename.lower().endswith(ext):
-                            basename = basename[:-len(ext)]
+                            basename = basename[: -len(ext)]
                             break
                 out_dir = osp.join(dest_dir, basename)
 
@@ -1212,7 +1228,7 @@ def _delete_extraneous_local(
                 if src_inner:
                     if not (info.path == src_inner or info.path.startswith(src_inner + '/')):
                         continue
-                    rel_path = info.path[len(src_inner):].lstrip('/')
+                    rel_path = info.path[len(src_inner) :].lstrip('/')
                 else:
                     rel_path = info.path
                 expected.add(osp.join(out_dir, rel_path))
@@ -1230,13 +1246,13 @@ def _delete_extraneous_local(
                         basename = src.archive_basename
                     out_dir = osp.join(dest_dir, basename)
 
-                pattern = f"{src_prefix}/**" if src_prefix else "**"
+                pattern = f'{src_prefix}/**' if src_prefix else '**'
                 for info in _get_file_infos(src_bc, pattern):
                     if not info.isfile():
                         continue
                     archive_path = info.path
                     if src_prefix:
-                        rel_path = archive_path[len(src_prefix):].lstrip('/')
+                        rel_path = archive_path[len(src_prefix) :].lstrip('/')
                     else:
                         rel_path = archive_path
                     expected.add(osp.join(out_dir, rel_path))
@@ -1247,10 +1263,10 @@ def _delete_extraneous_local(
             local_path = osp.join(root, fname)
             if local_path not in expected:
                 if options.dry_run:
-                    print(f"would delete: {local_path}")
+                    print(f'would delete: {local_path}')
                 else:
                     if options.verbose:
-                        print(f"delete: {local_path}")
+                        print(f'delete: {local_path}')
                     os.remove(local_path)
 
 

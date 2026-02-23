@@ -3,7 +3,7 @@ import os
 import struct
 
 # FIEMAP ioctl constants (from linux/fiemap.h)
-FS_IOC_FIEMAP = 0xc020660b  # _IOWR('f', 11, struct fiemap)
+FS_IOC_FIEMAP = 0xC020660B  # _IOWR('f', 11, struct fiemap)
 
 # struct fiemap (simplified, we only need first extent)
 # uint64 fm_start
@@ -40,14 +40,17 @@ def get_physical_offset(path: str) -> int:
         # Build fiemap request
         # fm_start=0, fm_length=max, fm_flags=0, fm_extent_count=1
         buf = bytearray(FIEMAP_SIZE + FIEMAP_EXTENT_SIZE)
-        struct.pack_into('<QQIIII', buf, 0,
-                         0,           # fm_start
-                         2**64 - 1,   # fm_length (max)
-                         0,           # fm_flags
-                         0,           # fm_mapped_extents (output)
-                         1,           # fm_extent_count
-                         0,           # fm_reserved
-                         )
+        struct.pack_into(
+            '<QQIIII',
+            buf,
+            0,
+            0,  # fm_start
+            2**64 - 1,  # fm_length (max)
+            0,  # fm_flags
+            0,  # fm_mapped_extents (output)
+            1,  # fm_extent_count
+            0,  # fm_reserved
+        )
 
         fcntl.ioctl(fd, FS_IOC_FIEMAP, buf)
 
@@ -65,6 +68,7 @@ def get_physical_offset(path: str) -> int:
         return 2**63 - 1
     finally:
         os.close(fd)
+
 
 def get_inode(path: str):
     try:

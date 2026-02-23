@@ -233,7 +233,7 @@ class TestDecodedView:
             dec.clear_codecs()
 
             # Now even .json should fail
-            with pytest.raises(ValueError, match="No codec registered"):
+            with pytest.raises(ValueError, match='No codec registered'):
                 dec['config.json'] = {'key': 'value'}
 
     def test_case_insensitive_extensions(self, archive_path):
@@ -297,8 +297,8 @@ class TestAutoCodecBackwardsCompatibility:
     def test_auto_codec_emits_deprecation_warning(self, archive_path):
         """Test that auto_codec=True emits DeprecationWarning."""
         with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            with Barecat(archive_path, readonly=False, auto_codec=True) as bc:
+            warnings.simplefilter('always')
+            with Barecat(archive_path, readonly=False, auto_codec=True) as _bc:
                 pass
 
             assert len(w) == 1
@@ -309,7 +309,7 @@ class TestAutoCodecBackwardsCompatibility:
     def test_auto_codec_json_read_write(self, archive_path):
         """Test auto_codec still works for JSON."""
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
+            warnings.simplefilter('ignore', DeprecationWarning)
 
             with Barecat(archive_path, readonly=False, auto_codec=True) as bc:
                 bc['config.json'] = {'key': 'value'}
@@ -322,7 +322,7 @@ class TestAutoCodecBackwardsCompatibility:
         arr = np.array([1, 2, 3, 4, 5])
 
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
+            warnings.simplefilter('ignore', DeprecationWarning)
 
             with Barecat(archive_path, readonly=False, auto_codec=True) as bc:
                 bc['data.npy'] = arr
@@ -335,7 +335,7 @@ class TestAutoCodecBackwardsCompatibility:
         data = {'list': [1, 2, 3], 'set': {4, 5, 6}}
 
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
+            warnings.simplefilter('ignore', DeprecationWarning)
 
             with Barecat(archive_path, readonly=False, auto_codec=True) as bc:
                 bc['data.pkl'] = data
@@ -349,7 +349,7 @@ class TestAutoCodecBackwardsCompatibility:
         img[10:40, 10:40] = [0, 255, 0]
 
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
+            warnings.simplefilter('ignore', DeprecationWarning)
 
             with Barecat(archive_path, readonly=False, auto_codec=True) as bc:
                 bc['image.png'] = img
@@ -363,7 +363,7 @@ class TestAutoCodecBackwardsCompatibility:
         data = {'key': 'value' * 100}
 
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
+            warnings.simplefilter('ignore', DeprecationWarning)
 
             with Barecat(archive_path, readonly=False, auto_codec=True) as bc:
                 bc['config.json.gz'] = data
@@ -376,7 +376,7 @@ class TestAutoCodecBackwardsCompatibility:
         raw_data = b'raw binary data'
 
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
+            warnings.simplefilter('ignore', DeprecationWarning)
 
             with Barecat(archive_path, readonly=False, auto_codec=True) as bc:
                 bc['file.xyz'] = raw_data
@@ -392,7 +392,7 @@ class TestAutoCodecBackwardsCompatibility:
             bc['test.txt'] = b'hello'
 
         with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+            warnings.simplefilter('always')
             with barecat.open(archive_path, mode='r', auto_codec=True) as bc:
                 pass
 

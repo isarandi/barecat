@@ -3,11 +3,10 @@ import copy
 import itertools
 import os
 import os.path as osp
-import re
 import sqlite3
 import sys
 from datetime import datetime
-from typing import Iterable, Iterator, Optional, TYPE_CHECKING, Union
+from typing import Iterable, Iterator, Optional, Union
 
 from ..util import misc
 
@@ -28,8 +27,6 @@ from ..core.paths import normalize_path
 from ..util.glob_helper import GlobHelper
 from ..maintenance.merge import IndexMergeHelper
 from contextlib import AbstractContextManager
-
-
 
 
 class Index(AbstractContextManager):
@@ -59,11 +56,11 @@ class Index(AbstractContextManager):
         self.readonly = readonly
         try:
             if self.readonly and readonly_is_immutable:
-                mode = "ro&immutable=1"
+                mode = 'ro&immutable=1'
             elif self.readonly:
-                mode = "ro"
+                mode = 'ro'
             else:
-                mode = "rwc"
+                mode = 'rwc'
             self.conn = sqlite3.connect(
                 f'file:{path}?mode={mode}',
                 uri=True,
@@ -102,8 +99,8 @@ class Index(AbstractContextManager):
                 )
 
         if self.readonly:
-            #self.cursor.execute('PRAGMA journal_mode=OFF')
-            #self.cursor.execute('PRAGMA synchronous=OFF')
+            # self.cursor.execute('PRAGMA journal_mode=OFF')
+            # self.cursor.execute('PRAGMA synchronous=OFF')
             if readonly_is_immutable:
                 self.cursor.execute('PRAGMA locking_mode=EXCLUSIVE')
             self.cursor.execute('PRAGMA cache_size=-64000')
@@ -137,9 +134,7 @@ class Index(AbstractContextManager):
         Archives without config table are treated as one major version below current.
         """
         try:
-            self.cursor.execute(
-                "SELECT value_int FROM config WHERE key='schema_version_major'"
-            )
+            self.cursor.execute("SELECT value_int FROM config WHERE key='schema_version_major'")
             row = self.cursor.fetchone()
             if row is None:
                 # Config table exists but no version entry - treat as old
@@ -159,16 +154,16 @@ class Index(AbstractContextManager):
 
         if db_major > SCHEMA_VERSION_MAJOR:
             raise BarecatError(
-                f"Database schema version {db_major}.{db_minor} is newer than "
-                f"supported version {SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}. "
-                "Please upgrade barecat: pip install --upgrade barecat"
+                f'Database schema version {db_major}.{db_minor} is newer than '
+                f'supported version {SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}. '
+                'Please upgrade barecat: pip install --upgrade barecat'
             )
 
         if db_major < SCHEMA_VERSION_MAJOR:
             raise BarecatError(
-                f"Database schema version {db_major}.{db_minor} is older than "
-                f"supported version {SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}. "
-                "Please run: barecat upgrade <archive>"
+                f'Database schema version {db_major}.{db_minor} is older than '
+                f'supported version {SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}. '
+                'Please run: barecat upgrade <archive>'
             )
 
         # Extract archive path (handles both old format with -sqlite-index suffix and new format)
@@ -176,25 +171,25 @@ class Index(AbstractContextManager):
 
         if db_minor > SCHEMA_VERSION_MINOR:
             print(
-                f"Warning: Schema version {db_major}.{db_minor} is newer than supported "
-                f"{SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}. Some features may not work. "
-                "Consider: pip install --upgrade barecat",
+                f'Warning: Schema version {db_major}.{db_minor} is newer than supported '
+                f'{SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}. Some features may not work. '
+                'Consider: pip install --upgrade barecat',
                 file=sys.stderr,
             )
 
         if db_minor < SCHEMA_VERSION_MINOR:
             if db_major == 0 and db_minor < 3:
                 print(
-                    f"Warning: Schema {db_major}.{db_minor} has a trigger bug that may cause "
-                    f"incorrect directory statistics if directories were moved or deleted. "
-                    f"Consider: barecat upgrade {archive_path}",
+                    f'Warning: Schema {db_major}.{db_minor} has a trigger bug that may cause '
+                    f'incorrect directory statistics if directories were moved or deleted. '
+                    f'Consider: barecat upgrade {archive_path}',
                     file=sys.stderr,
                 )
             else:
                 print(
-                    f"Warning: Schema version is outdated ({db_major}.{db_minor} < "
-                    f"{SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}). "
-                    f"Consider: barecat upgrade {archive_path}",
+                    f'Warning: Schema version is outdated ({db_major}.{db_minor} < '
+                    f'{SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}). '
+                    f'Consider: barecat upgrade {archive_path}',
                     file=sys.stderr,
                 )
 
@@ -247,7 +242,7 @@ class Index(AbstractContextManager):
         normalized_paths = [normalize_path(p) for p in paths]
         placeholders = ','.join('?' for _ in normalized_paths)
         query = f"""
-            SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns 
+            SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns
             FROM files WHERE path IN ({placeholders})
         """
         finfos = self.fetch_all(query, tuple(normalized_paths), rowcls=BarecatFileInfo)
@@ -317,7 +312,7 @@ class Index(AbstractContextManager):
     @property
     def num_dirs(self):
         """Number of directories in the index."""
-        return self.fetch_one("SELECT COUNT(*) FROM dirs")[0]
+        return self.fetch_one('SELECT COUNT(*) FROM dirs')[0]
 
     @property
     def total_size(self):
@@ -422,12 +417,12 @@ class Index(AbstractContextManager):
     ) -> Iterator[BarecatEntryInfo]:
         query = """
             SELECT path, NULL AS shard, NULL AS offset, size_tree AS size, NULL AS crc32c,
-                   mode, uid, gid, mtime_ns, num_subdirs, num_files, num_files_tree, 
+                   mode, uid, gid, mtime_ns, num_subdirs, num_files, num_files_tree,
                    'dir' AS type
             FROM dirs
             UNION ALL
             SELECT path, shard, offset, size, crc32c,
-                   mode, uid, gid, mtime_ns, NULL AS num_subdirs, NULL AS num_files, 
+                   mode, uid, gid, mtime_ns, NULL AS num_subdirs, NULL AS num_files,
                    NULL AS num_files_tree, 'file' AS type
             FROM files"""
         query += order.as_query_text()
@@ -460,14 +455,14 @@ class Index(AbstractContextManager):
     def iter_all_filepaths(
         self, order: Order = Order.ANY, bufsize: Optional[int] = None
     ) -> Iterator[str]:
-        query = "SELECT path FROM files" + order.as_query_text()
+        query = 'SELECT path FROM files' + order.as_query_text()
         for row in self.fetch_iter(query, bufsize=bufsize):
             yield row['path']
 
     def iter_all_dirpaths(
         self, order: Order = Order.ANY, bufsize: Optional[int] = None
     ) -> Iterator[str]:
-        query = "SELECT path FROM dirs" + order.as_query_text()
+        query = 'SELECT path FROM dirs' + order.as_query_text()
         for row in self.fetch_iter(query, bufsize=bufsize):
             yield row['path']
 
@@ -859,8 +854,8 @@ class Index(AbstractContextManager):
         try:
             return self.fetch_one_or_raise(
                 """
-                SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns 
-                FROM files 
+                SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns
+                FROM files
                 ORDER BY shard DESC, offset DESC LIMIT 1""",
                 rowcls=BarecatFileInfo,
             )
@@ -976,7 +971,8 @@ class Index(AbstractContextManager):
         except sqlite3.IntegrityError as e:
             if 'Path already exists as file' in str(e):
                 raise NotADirectoryBarecatError(
-                    f'A parent of {finfo.path!r} exists as a file') from e
+                    f'A parent of {finfo.path!r} exists as a file'
+                ) from e
             if 'Path already exists as directory' in str(e):
                 raise IsADirectoryBarecatError(finfo.path) from e
             raise FileExistsBarecatError(finfo.path) from e
@@ -1003,8 +999,7 @@ class Index(AbstractContextManager):
             )
         except sqlite3.IntegrityError as e:
             if 'Path already exists as file' in str(e):
-                raise NotADirectoryBarecatError(
-                    'A parent path exists as a file') from e
+                raise NotADirectoryBarecatError('A parent path exists as a file') from e
             if 'Path already exists as directory' in str(e):
                 raise IsADirectoryBarecatError('Path exists as a directory') from e
             raise FileExistsBarecatError([finfo.path for finfo in finfos]) from e
@@ -1104,7 +1099,8 @@ class Index(AbstractContextManager):
         except sqlite3.IntegrityError as e:
             if 'Path already exists as file' in str(e):
                 raise NotADirectoryBarecatError(
-                    f'{dinfo.path!r} or a parent exists as a file') from e
+                    f'{dinfo.path!r} or a parent exists as a file'
+                ) from e
             raise FileExistsBarecatError(dinfo.path) from e
 
     def rename(self, old: Union[BarecatEntryInfo, str], new: str, allow_overwrite: bool = False):
@@ -1219,7 +1215,7 @@ class Index(AbstractContextManager):
                             UPDATE files
                             -- The substring starts with the '/' after the old dirpath
                             -- SQL indexing starts at 1
-                            SET path = :new_path || substr(path, length(:old_path) + 1) 
+                            SET path = :new_path || substr(path, length(:old_path) + 1)
                             WHERE path GLOB
                             replace(replace(replace(:old_path, '[', '[[]'), '?', '[?]'), '*', '[*]')
                              || '/*'
@@ -1230,7 +1226,7 @@ class Index(AbstractContextManager):
                         self.cursor.execute(
                             r"""
                             UPDATE dirs
-                            SET path = :new_path || substr(path, length(:old_path) + 1) 
+                            SET path = :new_path || substr(path, length(:old_path) + 1)
                             WHERE path GLOB
                             replace(replace(replace(:old_path, '[', '[[]'), '?', '[?]'), '*', '[*]')
                              || '/*'
@@ -1409,7 +1405,7 @@ class Index(AbstractContextManager):
         # need to check if there is space in the shard
         result = self.fetch_one(
             """
-            SELECT offset FROM files 
+            SELECT offset FROM files
             WHERE shard = :shard AND offset > :offset
             ORDER BY offset LIMIT 1
             """,
@@ -1427,13 +1423,13 @@ class Index(AbstractContextManager):
         result = self.fetch_one(
             """
             SELECT shard, gap_offset FROM (
-                SELECT 
+                SELECT
                     shard,
                     (offset + size) AS gap_offset,
-                    LEAD(offset, 1, :shard_size_limit) OVER (PARTITION BY shard ORDER BY offset) 
+                    LEAD(offset, 1, :shard_size_limit) OVER (PARTITION BY shard ORDER BY offset)
                     AS gap_end
                 FROM files)
-            WHERE gap_end - gap_offset > :requested_size 
+            WHERE gap_end - gap_offset > :requested_size
             ORDER BY shard, gap_offset
             LIMIT 1
             """,
@@ -1524,7 +1520,7 @@ class Index(AbstractContextManager):
 
         res = self.fetch_many(
             """
-            SELECT 
+            SELECT
                 dirs.path,
                 dirs.num_files,
                 temp_dir_stats.num_files AS temp_num_files,
@@ -1533,14 +1529,14 @@ class Index(AbstractContextManager):
                 dirs.size_tree,
                 temp_dir_stats.size_tree AS temp_size_tree,
                 dirs.num_files_tree,
-                temp_dir_stats.num_files_tree AS temp_num_files_tree      
-            FROM 
+                temp_dir_stats.num_files_tree AS temp_num_files_tree
+            FROM
                 dirs
-            JOIN 
+            JOIN
                 temp_dir_stats
-            ON 
+            ON
                 dirs.path = temp_dir_stats.path
-            WHERE 
+            WHERE
                 NOT (
                     dirs.num_files = temp_dir_stats.num_files AND
                     dirs.num_subdirs = temp_dir_stats.num_subdirs AND
@@ -1570,9 +1566,7 @@ class Index(AbstractContextManager):
 
         # Check for paths that exist as both file and directory
         # Scan dirs (smaller) and lookup in files (larger)
-        conflicts = self.fetch_all(
-            "SELECT path FROM dirs WHERE path IN (SELECT path FROM files)"
-        )
+        conflicts = self.fetch_all('SELECT path FROM dirs WHERE path IN (SELECT path FROM files)')
         if conflicts:
             is_good = False
             print('Paths exist as both file and directory:')
@@ -1842,7 +1836,7 @@ class Index(AbstractContextManager):
 
     @property
     def _foreign_keys_enabled(self):
-        return self.fetch_one("PRAGMA foreign_keys")[0] == 1
+        return self.fetch_one('PRAGMA foreign_keys')[0] == 1
 
     @_foreign_keys_enabled.setter
     def _foreign_keys_enabled(self, value):
@@ -1872,7 +1866,7 @@ class Index(AbstractContextManager):
             yield
         finally:
             self.conn.commit()
-            self.cursor.execute(f"DETACH DATABASE {name}")
+            self.cursor.execute(f'DETACH DATABASE {name}')
 
     def close(self):
         """Close the index."""

@@ -1,4 +1,5 @@
 """Tests for Barecat file object API."""
+
 import io
 import tempfile
 import os.path as osp
@@ -395,7 +396,7 @@ class TestEmptyFile:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = osp.join(tmpdir, 'test.barecat')
             with Barecat(path, readonly=False) as bc:
-                with bc.open('empty.txt', 'wb') as f:
+                with bc.open('empty.txt', 'wb') as _f:
                     pass  # Write nothing
 
                 assert bc['empty.txt'] == b''
@@ -461,5 +462,3 @@ class TestFileObjectProperties:
             with Barecat(path, readonly=True) as bc:
                 with bc.open('file.txt', 'rb') as f:
                     assert len(f) == 5
-
-
