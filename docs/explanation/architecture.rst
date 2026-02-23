@@ -131,9 +131,10 @@ The SQLite database has three tables:
 
 **config**: Key-value settings::
 
-    use_triggers      -- Enable/disable trigger-based stats
-    shard_size_limit  -- Maximum bytes per shard
-    schema_version    -- For future migrations
+    use_triggers          -- Enable/disable trigger-based stats
+    shard_size_limit      -- Maximum bytes per shard
+    schema_version_major  -- Schema major version
+    schema_version_minor  -- Schema minor version
 
 The ``parent`` column is a generated column. SQLite computes it automatically
 from the path by stripping the last path component. This keeps the data
@@ -298,30 +299,37 @@ require coordination that the basic Barecat class does not implement.
 Codecs
 ------
 
-The dict-like API can automatically encode and decode files based on extension::
+Wrap a Barecat archive with ``DecodedView`` for automatic encoding and decoding
+based on file extension::
 
-    bc = Barecat('archive', readonly=False, auto_codec=True)
-    bc['image.jpg'] = numpy_array  # Encodes as JPEG
-    arr = bc['image.jpg']          # Decodes back to array
+    from barecat import Barecat, DecodedView
+
+    with Barecat('archive', readonly=False) as bc:
+        dec = DecodedView(bc)
+        dec['image.jpg'] = numpy_array  # Encodes as JPEG
+        arr = dec['image.jpg']          # Decodes back to array
 
 Built-in codecs:
 
-- ``.jpg``, ``.jpeg``: JPEG via OpenCV/jpeg4py
+- ``.json``: JSON (dict/list)
+- ``.pkl``, ``.pickle``: Pickle (any Python object)
+- ``.jpg``, ``.jpeg``: JPEG (via jpeg4py, OpenCV, Pillow, or imageio)
+- ``.png``, ``.bmp``, ``.gif``, ``.tiff``, ``.webp``, ``.exr``: Images (via OpenCV, Pillow, or imageio)
 - ``.npy``: NumPy arrays
 - ``.npz``: NumPy archives (multiple arrays)
 - ``.msgpack``: MessagePack with NumPy support
-- ``.bz2``: BZ2 compression (can stack with other extensions)
+- ``.gz``, ``.bz2``, ``.xz``: Compression (stackable with other extensions)
 
 Codecs can be stacked::
 
-    bc['data.npy.bz2'] = array  # Saves as compressed NumPy
+    dec['data.npy.bz2'] = array  # Saves as compressed NumPy
 
 The ``nonfinal=True`` flag marks a codec as a compression layer that wraps
 another format.
 
 Register custom codecs with::
 
-    bc.register_codec(['.pkl'], pickle.dumps, pickle.loads)
+    dec.register_codec(['.yaml'], yaml_encode, yaml_decode)
 
 Two APIs
 --------
@@ -356,11 +364,11 @@ Merging archives
 
 Two archives can be merged in two ways:
 
-**Data copy** (``barecat-merge``): Copy shard contents into the target archive.
+**Data copy** (``barecat merge``): Copy shard contents into the target archive.
 The data is physically combined. This is the "true" merge but requires
 rewriting all the source data.
 
-**Symlink merge** (``barecat-merge-symlink``): Create symlinks to the source
+**Symlink merge** (``barecat merge --symlink``): Create symlinks to the source
 shards and merge only the indexes. The source shards are renumbered in the
 target index to avoid collisions. No data is copied.
 
@@ -378,9 +386,9 @@ Each file can store a CRC32C checksum. On read, the checksum is verified::
 
     bc.read('file')  # Raises ValueError on checksum mismatch
 
-The ``barecat-verify`` command checks all files::
+The ``barecat verify`` command checks all files::
 
-    barecat-verify /path/to/archive
+    barecat verify /path/to/archive
 
 This reads every byte of every file and compares checksums. It also runs
 SQLite's ``PRAGMA integrity_check`` on the index.

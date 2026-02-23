@@ -125,11 +125,8 @@ Python API
 
 .. code-block:: python
 
-   from barecat.cli_impl import (
-       archive2barecat,
-       barecat2archive,
-       wrap_archive,
-   )
+   from barecat import archive2barecat, barecat2archive
+   from barecat.cli.impl import wrap_archive
 
    # tar to barecat
    archive2barecat('data.tar.gz', 'data.barecat', shard_size_limit=50*1024**3)

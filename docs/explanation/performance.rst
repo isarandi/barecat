@@ -115,7 +115,7 @@ Write performance is limited by:
    with bc.index.no_triggers():
        for path, data in items:
            bc[path] = data
-   bc.index.rebuild_dir_stats()  # Rebuild after bulk insert
+   bc.index.update_treestats()  # Rebuild after bulk insert
 
 This can be 10-100x faster for large imports.
 

@@ -149,7 +149,7 @@ Python API
 
 .. code-block:: python
 
-   from barecat.cli_impl import merge, merge_symlink
+   from barecat import merge, merge_symlink
 
    # Regular merge
    merge(

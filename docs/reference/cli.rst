@@ -168,7 +168,7 @@ List archive contents.
 ``-l, --long``
    Long listing format with file sizes.
 
-``-r, --recursive``
+``-R, --recursive``
    List directories recursively.
 
 **Examples:**
@@ -177,7 +177,7 @@ List archive contents.
 
    barecat list myarchive.barecat
    barecat ls -l myarchive.barecat subdir/
-   barecat list -lr myarchive.barecat
+   barecat list -lR myarchive.barecat
 
 
 barecat cat
@@ -248,17 +248,47 @@ Opens a curses-based file browser similar to ranger.
 barecat du
 ~~~~~~~~~~
 
-Disk usage viewer (ncdu-like).
+Show disk usage (like du).
 
 **Synopsis:**
 
 .. code-block:: text
 
-   barecat du ARCHIVE
+   barecat du [options] ARCHIVE [PATH]
 
 **Description:**
 
-Opens an ncdu-like interface showing disk usage by directory.
+Prints disk usage by directory, similar to the Unix ``du`` command.
+
+**Options:**
+
+``-a, --all``
+   Show all files, not just directories.
+
+``-s, --summarize``
+   Show only total for each argument.
+
+``-H, --human-readable``
+   Print sizes in human-readable format.
+
+``-d, --max-depth N``
+   Maximum depth to show.
+
+
+barecat ncdu
+~~~~~~~~~~~~
+
+Interactive disk usage viewer (ncdu-like).
+
+**Synopsis:**
+
+.. code-block:: text
+
+   barecat ncdu ARCHIVE
+
+**Description:**
+
+Opens an ncdu-like curses interface showing disk usage by directory.
 
 
 barecat verify

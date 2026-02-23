@@ -110,13 +110,13 @@ When barecat schema changes, upgrade existing archives:
 
 .. code-block:: bash
 
-   barecat upgrade-database myarchive.barecat
+   barecat upgrade myarchive.barecat
 
 With multiple workers for faster processing:
 
 .. code-block:: bash
 
-   barecat upgrade-database -j 8 myarchive.barecat
+   barecat upgrade -j 8 myarchive.barecat
 
 This migrates the SQLite schema while preserving all data.
 
@@ -130,7 +130,7 @@ Run the upgrade:
 
 .. code-block:: bash
 
-   barecat upgrade-database myarchive.barecat
+   barecat upgrade myarchive.barecat
 
 "Checksum mismatch"
 ~~~~~~~~~~~~~~~~~~~
@@ -169,15 +169,14 @@ Python API
 .. code-block:: python
 
    import barecat
-   from barecat.cli_impl import verify_integrity
-   from barecat.defrag import defrag
 
    # Verify
-   success = verify_integrity('archive.barecat', quick=False)
+   with barecat.Barecat('archive.barecat') as bc:
+       bc.verify_integrity(quick=False)
 
    # Defrag
-   with barecat.Barecat('archive.barecat', readonly=False) as bc:
-       defrag(bc, quick=False)
+   with barecat.Barecat('archive.barecat', readonly=False, append_only=False) as bc:
+       bc.defrag(quick=False)
 
 Maintenance Schedule
 --------------------
@@ -186,7 +185,7 @@ Recommended practices:
 
 1. **After bulk deletions**: Run defrag to reclaim space
 2. **Periodically**: Run ``verify --quick`` to catch issues early
-3. **After barecat upgrade**: Run ``upgrade-database`` if prompted
+3. **After barecat upgrade**: Run ``barecat upgrade`` if prompted
 
 See Also
 --------

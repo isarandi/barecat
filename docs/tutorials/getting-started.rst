@@ -67,7 +67,7 @@ List the contents:
 
    barecat list myarchive.barecat
    barecat list -l myarchive.barecat        # Long format with sizes
-   barecat list -lr myarchive.barecat       # Recursive listing
+   barecat list -lR myarchive.barecat       # Recursive listing
 
 Extract a single file to stdout:
 
@@ -107,7 +107,7 @@ Python
                print(f"{root}/{f}")
 
        # File-like access
-       with bc.open('hello.txt') as f:
+       with bc.open('hello.txt', 'rb') as f:
            data = f.read(5)  # Read first 5 bytes
            print(data)  # b'Hello'
 
@@ -123,7 +123,7 @@ Command Line
    barecat add myarchive.barecat newfile.txt another_directory/
 
    # Add from stdin (one path per line)
-   find /data -name '*.jpg' | barecat add --stdin myarchive.barecat
+   find /data -name '*.jpg' | barecat add -T - myarchive.barecat
 
 Python
 ~~~~~~
@@ -216,14 +216,13 @@ Browser
 
 This opens a ranger-like file browser for visual exploration.
 
-Disk Usage Viewer
-~~~~~~~~~~~~~~~~~
+Disk Usage
+~~~~~~~~~~
 
 .. code-block:: bash
 
-   barecat du myarchive.barecat
-
-This opens an ncdu-like interface showing disk usage by directory.
+   barecat du myarchive.barecat          # Text output (like du)
+   barecat ncdu myarchive.barecat        # Interactive ncdu-like TUI
 
 Next Steps
 ----------

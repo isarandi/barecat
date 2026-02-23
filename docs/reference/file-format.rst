@@ -65,7 +65,7 @@ Tables
 .. code-block:: sql
 
    CREATE TABLE files (
-       path     TEXT PRIMARY KEY NOT NULL,
+       path     TEXT NOT NULL,
        parent   TEXT GENERATED ALWAYS AS (
            rtrim(rtrim(path, replace(path, '/', '')), '/')
        ) VIRTUAL NOT NULL REFERENCES dirs(path),
@@ -94,8 +94,11 @@ Tables
 .. code-block:: sql
 
    CREATE TABLE dirs (
-       path           TEXT PRIMARY KEY,
-       parent         TEXT GENERATED ALWAYS AS (...) VIRTUAL REFERENCES dirs(path),
+       path           TEXT NOT NULL,
+       parent         TEXT GENERATED ALWAYS AS (
+           CASE WHEN path = '' THEN NULL
+           ELSE rtrim(rtrim(path, replace(path, '/', '')), '/') END
+       ) VIRTUAL REFERENCES dirs(path),
        num_subdirs    INTEGER DEFAULT 0,
        num_files      INTEGER DEFAULT 0,
        num_files_tree INTEGER DEFAULT 0,
@@ -133,6 +136,8 @@ Indexes
 
 .. code-block:: sql
 
+   CREATE UNIQUE INDEX idx_files_path ON files(path);
+   CREATE UNIQUE INDEX idx_dirs_path ON dirs(path);
    CREATE INDEX idx_files_parent ON files(parent);
    CREATE INDEX idx_dirs_parent ON dirs(parent);
    CREATE INDEX idx_files_shard_offset ON files(shard, offset);

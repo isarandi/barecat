@@ -61,12 +61,12 @@ Barecat Class
 
    **Filesystem-like Access**
 
-   .. py:method:: open(path, mode='rb')
+   .. py:method:: open(path, mode='r')
 
       Open a file for reading or writing.
 
       :param str path: Path to the file.
-      :param str mode: 'rb' for reading, 'r+b' for read-write.
+      :param str mode: 'r' for text, 'rb' for binary, 'r+b' for read-write binary.
       :returns: File-like object.
 
       .. code-block:: python

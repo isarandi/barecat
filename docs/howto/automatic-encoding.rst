@@ -54,8 +54,9 @@ Supported Formats
 
 Images are stored/returned as numpy arrays with shape ``(H, W, C)``.
 
-The image codec uses the first available backend: OpenCV (``cv2``) > Pillow (``PIL``)
-> imageio. Install your preferred backend, or let barecat use whichever is available.
+The image codec uses the first available backend: jpeg4py (JPEG only) > OpenCV
+(``cv2``) > Pillow (``PIL``) > imageio. Install your preferred backend, or let
+barecat use whichever is available.
 
 **Compression** (stackable):
 

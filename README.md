@@ -1,9 +1,11 @@
 # Barecat
 
-**[Full API Reference Docs](https://istvansarandi.com/docs/barecat/api/barecat/Barecat.html)**
+**[Documentation](https://barecat.readthedocs.io)** |
+**[API Reference](https://istvansarandi.com/docs/barecat/api/barecat/Barecat.html)** |
+**[GitHub](https://github.com/isarandi/barecat)**
 
 Barecat (**bare** con**cat**enation) is a highly scalable, simple aggregate storage format for
-storing many (tens of millions and more) small files, with focus on fast random access and 
+storing many (tens of millions and more) small files, with focus on fast random access and
 minimal overhead.
 
 Barecat can be thought of as a simple filesystem, or as something akin to an indexed tarball, or a
@@ -16,16 +18,28 @@ experience (`listdir`, `walk`, `glob`, etc).
 
 Internally, all the data is simply concatenated one after another into one or more data shard files.
 Additionally, an index is maintained in an SQLite database, which stores the shard number, the offset
-and the size of each inner file (as well as a checksum, and further filesystem-like metadata 
+and the size of each inner file (as well as a checksum, and further filesystem-like metadata
 like modification time). Barecat also maintains aggregate statistics for each directory, such as the
 total number of files and total file size.
-
 
 ![Architecture](./figure.png)
 
 As you can see, the Barecat format is very simple. Readers/writers are easy to write in any language, since
 SQLite is a widely-supported format.
 
+## Installation
+
+```bash
+pip install barecat
+```
+
+Optional extras:
+
+```bash
+pip install barecat[mount]   # FUSE mount support
+```
+
+Requires Python 3.9+.
 
 ## Background
 
@@ -52,77 +66,126 @@ statistics (total file size, number of files) for each directory.
   The index is stored in a separate SQLite database file, which itself does not need to be loaded
   entirely into memory. Ideal for storing training image data for deep learning jobs.
 - **Sharding**: To make it easier to move the data around or to distribute it across multiple
-  storage devices, the archive can be split into multiple files of equal size (shards, or volumes). 
+  storage devices, the archive can be split into multiple files of equal size (shards, or volumes).
   The shards do not have to be concatenated to be used, the library will keep all shard files open
   and load data from the appropriate one during normal operations.
 - **Fast browsing**: The SQLite database contains an index for the parent directories, allowing
   fast listing of directory contents and aggregate statistics (total file size, number of files).
 - **Intuitive API**: Familiar filesystem-like API, as well as a dictionary-like one.
-- **Mountable**: The archive can be efficiently mounted in readonly or read-write mode.
+- **Mountable**: The archive can be efficiently mounted in readonly or read-write mode via FUSE.
 - **Simple storage format**: The files are simply concatenated after each other and the index contains
   the offsets and sizes of each file. There is no header format to understand. The index can be
   dumped into any format with simple SQL queries.
 
-## Command line interface
+## Command Line Interface
 
-To create a Barecat archive, use the `barecat-create` or `barecat-create-recursive` commands, which 
-are automatically installed executables with the pip package.
+Barecat provides a unified `barecat` command with subcommands:
 
 ```bash
-barecat-create --file=mydata.barecat --shard-size=100G < path_of_paths.txt 
+# Create archive from files and directories
+barecat create mydata.barecat /path/to/images/
 
-find dirname -name '*.jpg' -print0 | barecat-create --null --file=mydata.barecat --shard-size=100G
+# Create from find output
+find /data -name '*.jpg' -print0 | barecat create -0 mydata.barecat -T -
 
-barecat-create-recursive dir1 dir2 dir3 --file=mydata.barecat --shard-size=100G
+# Extract archive
+barecat extract mydata.barecat -C /output/
+
+# List contents
+barecat list mydata.barecat
+barecat list -l mydata.barecat         # Long format with sizes
+
+# Add files to an existing archive
+barecat add mydata.barecat newdir/
+
+# Print a file to stdout
+barecat cat mydata.barecat path/to/file.txt
+
+# Convert from/to tar or zip
+barecat convert data.tar.gz data.barecat
+
+# Interactive shell
+barecat shell mydata.barecat
+
+# Merge multiple archives
+barecat merge -o combined.barecat archive1.barecat archive2.barecat
+
+# Verify integrity
+barecat verify mydata.barecat
+
+# Defragment after deletions
+barecat defrag mydata.barecat
+
+# Mount via FUSE (requires barecat[mount])
+barecat mount mydata.barecat /mnt/mydata
 ```
 
 This may yield the following files:
 
 ```
+mydata.barecat-shard-00000
 mydata.barecat-shard-00001
-mydata.barecat-shard-00002
 mydata.barecat-sqlite-index
 ```
 
-The files can be extracted out again. Unix-like permissions, modification times, owner info are
+The files can be extracted back out. Unix-like permissions, modification times, and owner info are
 preserved.
 
-```bash
-barecat-extract --file=mydata.barecat --target-directory=targetdir/
-```
+See the [documentation](https://barecat.readthedocs.io) for the full CLI reference.
 
 ## Python API
 
 ```python
-
 import barecat
 
+# Write
 with barecat.Barecat('mydata.barecat', readonly=False) as bc:
-  bc['path/to/file/as/stored.jpg'] = binary_file_data
-  bc.add_by_path('path/to/file/on/disk.jpg')
-  
-  with open('path', 'rb') as f:
-    bc.add('path/to/file/on/disk.jpg', fileobj=f)
-    
+    bc['path/to/file.jpg'] = binary_file_data
+    bc.add_by_path('path/to/file/on/disk.jpg')
+
+    with open('local_file.bin', 'rb') as f:
+        bc.add('path/in/archive.bin', fileobj=f)
+
+# Read
 with barecat.Barecat('mydata.barecat') as bc:
-  binary_file_data = bc['path/to/file.jpg']
-  entrynames = bc.listdir('path/to')
-  for root, dirs, files in bc.walk('path/to/something'):
-    print(root, dirs, files)
-    
-  paths = bc.glob('path/to/**/*.jpg', recursive=True)
-  
-  with bc.open('path/to/file.jpg', 'rb') as f:
-    data = f.read(123)
+    binary_file_data = bc['path/to/file.jpg']
+    entrynames = bc.listdir('path/to')
+
+    for root, dirs, files in bc.walk('path/to/something'):
+        print(root, dirs, files)
+
+    paths = bc.glob('path/to/**/*.jpg', recursive=True)
+
+    with bc.open('path/to/file.jpg', 'rb') as f:
+        data = f.read(123)
 ```
 
-## Image viewer
+### Automatic Encoding/Decoding
 
-Barecat comes with a simple image viewer that can be used to browse the contents of a Barecat
-archive.
+Wrap the archive with `DecodedView` for automatic serialization based on file extension:
 
-```bash
-barecat-image-viewer mydata.barecat
+```python
+from barecat import Barecat, DecodedView
+import numpy as np
+
+with Barecat('data.barecat', readonly=False) as bc:
+    dec = DecodedView(bc)
+    dec['config.json'] = {'learning_rate': 0.001}
+    dec['weights.npy'] = np.random.randn(100, 100)
+
+with Barecat('data.barecat') as bc:
+    dec = DecodedView(bc)
+    config = dec['config.json']   # Returns dict
+    weights = dec['weights.npy']  # Returns numpy array
 ```
 
- 
+Supported formats: `.json`, `.pkl`, `.npy`, `.npz`, `.msgpack`, images (`.png`, `.jpg`, etc.),
+with stackable compression (`.gz`, `.bz2`, `.xz`).
+
+## Documentation
+
+Full documentation is available at [barecat.readthedocs.io](https://barecat.readthedocs.io).
+
+## License
+
+MIT
