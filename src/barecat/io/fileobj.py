@@ -101,6 +101,12 @@ class BarecatFileObjectHelper:
         if not creating and not file_exists:
             raise FileNotFoundBarecatError(path)
 
+        # Check readonly archive vs write mode
+        if not readonly and self.bc.readonly:
+            raise ValueError(
+                f"Cannot open file '{path}' for writing: archive is read-only"
+            )
+
         # Read-only mode
         if readonly:
             return sharder.open_from_address(finfo.shard, finfo.offset, finfo.size, 'rb')

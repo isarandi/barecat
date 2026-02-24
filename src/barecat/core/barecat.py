@@ -575,7 +575,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             exp_crc32c = None
 
         return self.sharder.readinto_from_address(
-            shard, offset_in_shard + offset, buffer[:size_to_read], exp_crc32c
+            shard, offset_in_shard + offset, memoryview(buffer)[:size_to_read], exp_crc32c
         )
 
     def read(self, item: Union[BarecatFileInfo, str], offset: int = 0, size: int = -1) -> bytes:
