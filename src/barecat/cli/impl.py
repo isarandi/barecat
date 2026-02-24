@@ -153,6 +153,14 @@ def merge_symlink(
 
 
 def extract(barecat_path, target_directory):
+    import warnings
+
+    warnings.warn(
+        "barecat.extract() is deprecated. Use 'barecat extract' CLI or "
+        'Barecat class directly instead.',
+        DeprecationWarning,
+        stacklevel=2,
+    )
     from ..io.copyfile import copy
 
     with barecat_.Barecat(barecat_path) as reader:
@@ -160,7 +168,7 @@ def extract(barecat_path, target_directory):
             target_path = osp.join(target_directory, path_in_archive)
             os.makedirs(osp.dirname(target_path), exist_ok=True)
             with open(target_path, 'wb') as output_file:
-                copy(reader.open(path_in_archive), output_file)
+                copy(reader.open(path_in_archive, 'rb'), output_file)
 
 
 def archive2barecat(src_path, target_path, shard_size_limit, overwrite=False):
@@ -498,6 +506,13 @@ def _should_include(path, pattern, filter_rules):
 
 
 def write_index(dictionary, target_path):
+    import warnings
+
+    warnings.warn(
+        "barecat.write_index() is deprecated. Use 'barecat.Index' class directly instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     with barecat_.Index(target_path, readonly=False) as index_writer:
         for path, (shard, offset, size) in dictionary.items():
             index_writer.add_file(

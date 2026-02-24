@@ -9,6 +9,9 @@ from .core.barecat import Barecat
 def open(path, mode='r', auto_codec=False, threadsafe_reader=True):
     """Open a Barecat archive.
 
+    .. deprecated::
+        Use ``Barecat(path, readonly=True)`` or ``Barecat(path, readonly=False)`` directly.
+
     Args:
         path: Path to the archive (without suffix).
         mode: 'r' (read), 'r+' (read-write), 'w+' (overwrite), 'a+' (append), 'x+' (exclusive create).
@@ -18,6 +21,12 @@ def open(path, mode='r', auto_codec=False, threadsafe_reader=True):
     Returns:
         Barecat: The opened archive.
     """
+    warnings.warn(
+        'barecat.open() is deprecated and will be removed in version 1.0. '
+        'Use Barecat(path, readonly=True) or Barecat(path, readonly=False) directly.',
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if auto_codec:
         warnings.warn(
             'auto_codec is deprecated and will be removed in version 1.0. '
@@ -76,13 +85,38 @@ def open(path, mode='r', auto_codec=False, threadsafe_reader=True):
         raise ValueError(f'Invalid mode: {mode}')
 
 
-def get_cached_reader(path, auto_codec=True):
+def get_cached_reader(path, auto_codec=None):
     """Get a thread-locally cached read-only Barecat reader.
 
     Each thread/process gets its own cached instance. Useful for multi-threaded
     data loading where each worker needs its own Barecat handle.
+
+    Args:
+        path: Path to the archive.
+        auto_codec: Whether to automatically decode files based on extension.
+            Currently defaults to True for backwards compatibility, but the default
+            will change to False in version 1.0. Pass True or False explicitly to
+            silence the deprecation warning. Use DecodedView for new code.
     """
     import multiprocessing_utils
+
+    if auto_codec is None:
+        warnings.warn(
+            'get_cached_reader() currently defaults to auto_codec=True, but this '
+            'default will change to False in version 1.0. Pass auto_codec=True '
+            'explicitly to keep the current behavior, or auto_codec=False '
+            '(and use DecodedView) to adopt the new default.',
+            FutureWarning,
+            stacklevel=2,
+        )
+        auto_codec = True
+    elif auto_codec:
+        warnings.warn(
+            'auto_codec=True in get_cached_reader() is deprecated and will be removed '
+            'in version 1.0. Use DecodedView instead.',
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     # Thread-local LRU cache
     local = multiprocessing_utils.local()
