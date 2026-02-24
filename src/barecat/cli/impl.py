@@ -53,7 +53,7 @@ def create(
 def merge(
     source_paths,
     target_path,
-    shard_size_limit,
+    shard_size_limit=None,
     overwrite=False,
     ignore_duplicates=False,
     as_subdirs=False,
@@ -521,8 +521,18 @@ def write_index(dictionary, target_path):
 
 
 def read_index(path):
+    import warnings
+
+    warnings.warn(
+        "barecat.read_index() is deprecated. Use 'barecat.Index' class directly instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     with barecat_.Index(path) as reader:
-        return dict(reader.items())
+        return {
+            f.path: (f.shard, f.offset, f.size)
+            for f in reader.iter_all_fileinfos()
+        }
 
 
 def iterate_zero_terminated(fileobj):

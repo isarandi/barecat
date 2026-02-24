@@ -1192,6 +1192,14 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         self._index_storage.close()
         self.sharder.close()
 
+    def __repr__(self):
+        mode = 'readonly' if self.readonly else 'read-write'
+        try:
+            n = self.num_files
+            return f"Barecat('{self.path}', {mode}, {n} files)"
+        except Exception:
+            return f"Barecat('{self.path}', {mode})"
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit a context manager."""
         self.close()

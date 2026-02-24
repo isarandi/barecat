@@ -194,6 +194,11 @@ class BarecatFileInfo(BarecatEntryInfo):
     def isfile(self) -> bool:
         return True
 
+    def __repr__(self):
+        return (
+            f"BarecatFileInfo('{self.path}', {self.size} bytes, shard={self.shard})"
+        )
+
 
 class BarecatDirInfo(BarecatEntryInfo):
     """
@@ -276,6 +281,25 @@ class BarecatDirInfo(BarecatEntryInfo):
 
     def isdir(self) -> bool:
         return True
+
+    def __repr__(self):
+        parts = [f"'{self.path}'"]
+        if self.num_files_tree is not None:
+            parts.append(f'{self.num_files_tree} files')
+        if self.size_tree is not None:
+            parts.append(f'{_format_size_short(self.size_tree)}')
+        return f"BarecatDirInfo({', '.join(parts)})"
+
+
+def _format_size_short(size):
+    """Format a byte size as a short human-readable string."""
+    for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
+        if abs(size) < 1024:
+            if unit == 'B':
+                return f'{size} {unit}'
+            return f'{size:.1f} {unit}'
+        size /= 1024
+    return f'{size:.1f} PB'
 
 
 class Order(Flag):
