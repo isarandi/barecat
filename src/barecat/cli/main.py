@@ -24,6 +24,32 @@ def parse_shard_size(value):
     return parse_size(value)
 
 
+def _extract_directory_from_argv():
+    """Extract -C/--directory value from sys.argv before argparse parsing.
+
+    This allows -C to appear after positional arguments (like tar), which
+    argparse doesn't support natively. We remove the -C flag and its value
+    from sys.argv so argparse doesn't see it twice.
+
+    Returns:
+        The directory path if -C/--directory was found, None otherwise.
+    """
+    argv = sys.argv
+    directory = None
+    indices_to_remove = []
+    for i, arg in enumerate(argv):
+        if arg in ('-C', '--directory') and i + 1 < len(argv):
+            directory = argv[i + 1]
+            indices_to_remove.extend([i, i + 1])
+        elif arg.startswith('--directory='):
+            directory = arg.split('=', 1)[1]
+            indices_to_remove.append(i)
+    # Remove from argv in reverse order to preserve indices
+    for i in sorted(indices_to_remove, reverse=True):
+        del sys.argv[i]
+    return directory
+
+
 def _print_defrag_stats(stats):
     """Print defragmentation statistics."""
 
@@ -554,7 +580,15 @@ def main():
     p.add_argument('--include', action='append', default=[], metavar='PAT', help='Include pattern')
     p.add_argument('--exclude', action='append', default=[], metavar='PAT', help='Exclude pattern')
 
+    # Preprocess sys.argv: extract -C/--directory before argparse sees it,
+    # so it works regardless of position (like tar's -C flag).
+    directory_override = _extract_directory_from_argv()
+
     args = parser.parse_args()
+
+    # Apply -C override if it was found in argv preprocessing
+    if directory_override is not None and hasattr(args, 'directory'):
+        args.directory = directory_override
 
     if args.command is None:
         parser.print_help()
@@ -627,6 +661,7 @@ def main():
                 if not bc.verify_integrity(quick=True):
                     print('Integrity verification failed.', file=sys.stderr)
                     sys.exit(1)
+                print(f'Verified {bc.num_files} files (quick check), all OK.')
             else:
                 if not verify_crc_parallel(bc, workers=1):
                     print('CRC32C verification failed.', file=sys.stderr)
@@ -634,6 +669,11 @@ def main():
                 if not bc.index.verify_integrity():
                     print('Index integrity errors were found.', file=sys.stderr)
                     sys.exit(1)
+                total_size = _format_size(bc.total_size, human_readable=True)
+                print(
+                    f'Verified {bc.num_files} files ({total_size}), '
+                    f'all checksums OK.'
+                )
 
     elif args.command == 'defrag':
         readonly = args.dry_run
@@ -716,30 +756,39 @@ def main():
 
         pattern = _normalize_pattern(args.pattern) if args.pattern else None
 
-        if args.symlink:
-            impl.merge_symlink(
-                source_paths=args.archives,
-                target_path=args.output,
-                overwrite=args.force,
-                ignore_duplicates=args.ignore_duplicates,
-                as_subdirs=args.as_subdirs,
-                prefix=args.prefix,
-                pattern=pattern,
-                filter_rules=filter_rules,
+        try:
+            if args.symlink:
+                impl.merge_symlink(
+                    source_paths=args.archives,
+                    target_path=args.output,
+                    overwrite=args.force,
+                    ignore_duplicates=args.ignore_duplicates,
+                    as_subdirs=args.as_subdirs,
+                    prefix=args.prefix,
+                    pattern=pattern,
+                    filter_rules=filter_rules,
+                )
+            else:
+                # For append mode, we don't overwrite but allow existing
+                impl.merge(
+                    source_paths=args.archives,
+                    target_path=args.output,
+                    shard_size_limit=parse_shard_size(args.shard_size_limit),
+                    overwrite=args.force,
+                    ignore_duplicates=args.ignore_duplicates or args.append,
+                    as_subdirs=args.as_subdirs,
+                    prefix=args.prefix,
+                    pattern=pattern,
+                    filter_rules=filter_rules,
+                )
+        except barecat.FileExistsBarecatError as e:
+            print(
+                f'Error: Duplicate path in archive: {e}\n'
+                'To ignore duplicates and keep the first occurrence, '
+                'use --ignore-duplicates.',
+                file=sys.stderr,
             )
-        else:
-            # For append mode, we don't overwrite but allow existing
-            impl.merge(
-                source_paths=args.archives,
-                target_path=args.output,
-                shard_size_limit=parse_shard_size(args.shard_size_limit),
-                overwrite=args.force,
-                ignore_duplicates=args.ignore_duplicates or args.append,
-                as_subdirs=args.as_subdirs,
-                prefix=args.prefix,
-                pattern=pattern,
-                filter_rules=filter_rules,
-            )
+            sys.exit(1)
 
     elif args.command == 'index-to-csv':
         writer = csv.writer(sys.stdout, delimiter=',', quotechar='"', quoting=csv.QUOTE_NONNUMERIC)
