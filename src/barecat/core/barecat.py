@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 import os.path as osp
 import shutil
@@ -45,6 +46,8 @@ else:
     )
     from .index import Index, normalize_path
     from .paths import resolve_index_path
+
+logger = logging.getLogger(__name__)
 
 
 class Barecat(MutableMapping[str, Any], AbstractContextManager):
@@ -100,7 +103,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             if not exist_ok:
                 raise FileExistsError(path)
             if overwrite:
-                print(f'Overwriting existing Barecat at {path}')
+                logger.info('Overwriting existing Barecat at %s', path)
                 barecat_util.remove(path)
 
         if readonly and not barecat_util.exists(path):
@@ -1028,7 +1031,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         with self.open(finfo, 'rb') as f:
             crc32c = accumulate_crc32c(f)
         if finfo.crc32c is not None and crc32c != finfo.crc32c:
-            print(f'CRC32C mismatch for {finfo.path}. Expected {finfo.crc32c}, got {crc32c}')
+            logger.warning('CRC32C mismatch for %s. Expected %s, got %s', finfo.path, finfo.crc32c, crc32c)
             return False
         return True
 
@@ -1060,7 +1063,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
                 if not self.check_crc32c(fi):
                     is_good = False
                     if n_printed >= 10:
-                        print('...')
+                        logger.warning('... (further mismatches suppressed)')
                         break
                     n_printed += 1
 

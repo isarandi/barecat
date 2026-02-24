@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import logging
 import re
 import sys
 
@@ -583,6 +584,8 @@ def main():
     # Preprocess sys.argv: extract -C/--directory before argparse sees it,
     # so it works regardless of position (like tar's -C flag).
     directory_override = _extract_directory_from_argv()
+
+    logging.basicConfig(format='%(message)s', level=logging.WARNING)
 
     args = parser.parse_args()
 

@@ -1,10 +1,11 @@
 import contextlib
 import copy
 import itertools
+import logging
 import os
 import os.path as osp
 import sqlite3
-import sys
+import warnings
 from datetime import datetime
 from typing import Iterable, Iterator, Optional, Union
 
@@ -27,6 +28,8 @@ from ..core.paths import normalize_path
 from ..util.glob_helper import GlobHelper
 from ..maintenance.merge import IndexMergeHelper
 from contextlib import AbstractContextManager
+
+logger = logging.getLogger(__name__)
 
 
 class Index(AbstractContextManager):
@@ -170,27 +173,27 @@ class Index(AbstractContextManager):
         archive_path = self.path.removesuffix('-sqlite-index')
 
         if db_minor > SCHEMA_VERSION_MINOR:
-            print(
-                f'Warning: Schema version {db_major}.{db_minor} is newer than supported '
+            warnings.warn(
+                f'Schema version {db_major}.{db_minor} is newer than supported '
                 f'{SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}. Some features may not work. '
                 'Consider: pip install --upgrade barecat',
-                file=sys.stderr,
+                stacklevel=2,
             )
 
         if db_minor < SCHEMA_VERSION_MINOR:
             if db_major == 0 and db_minor < 3:
-                print(
-                    f'Warning: Schema {db_major}.{db_minor} has a trigger bug that may cause '
+                warnings.warn(
+                    f'Schema {db_major}.{db_minor} has a trigger bug that may cause '
                     f'incorrect directory statistics if directories were moved or deleted. '
                     f'Consider: barecat upgrade {archive_path}',
-                    file=sys.stderr,
+                    stacklevel=2,
                 )
             else:
-                print(
-                    f'Warning: Schema version is outdated ({db_major}.{db_minor} < '
+                warnings.warn(
+                    f'Schema version is outdated ({db_major}.{db_minor} < '
                     f'{SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}). '
                     f'Consider: barecat upgrade {archive_path}',
-                    file=sys.stderr,
+                    stacklevel=2,
                 )
 
     # READING
@@ -1549,19 +1552,19 @@ class Index(AbstractContextManager):
 
         if len(res) > 0:
             is_good = False
-            print('Mismatch in dir stats:')
+            logger.error('Mismatch in dir stats:')
             for row in res:
-                print('Mismatch:', dict(**row))
+                logger.error('Mismatch: %s', dict(**row))
 
         integrity_check_result = self.fetch_all('PRAGMA integrity_check')
         if integrity_check_result[0][0] != 'ok':
             str_result = str([dict(**x) for x in integrity_check_result])
-            print('Integrity check failed: \n' + str_result, file=sys.stderr)
+            logger.error('Integrity check failed:\n%s', str_result)
             is_good = False
         foreign_keys_check_result = self.fetch_all('PRAGMA foreign_key_check')
         if foreign_keys_check_result:
             str_result = str([dict(**x) for x in foreign_keys_check_result])
-            print('Foreign key check failed: \n' + str_result, file=sys.stderr)
+            logger.error('Foreign key check failed:\n%s', str_result)
             is_good = False
 
         # Check for paths that exist as both file and directory
@@ -1569,9 +1572,9 @@ class Index(AbstractContextManager):
         conflicts = self.fetch_all('SELECT path FROM dirs WHERE path IN (SELECT path FROM files)')
         if conflicts:
             is_good = False
-            print('Paths exist as both file and directory:')
+            logger.error('Paths exist as both file and directory:')
             for row in conflicts:
-                print(f'  {row[0]}')
+                logger.error('  %s', row[0])
 
         # Cleanup temporary tables
         self.cursor.execute('DROP TABLE IF EXISTS tmp_verify_treestats')
@@ -1645,7 +1648,7 @@ class Index(AbstractContextManager):
             - CTE took 170s
             - GLOB/LIKE would take hours (O(dirs * files) = 7 trillion comparisons)
         """
-        print('Computing treestats (bottom-up recursive CTE)')
+        logger.info('Computing treestats (bottom-up recursive CTE)')
         self.cursor.execute(
             r"""
             CREATE TEMPORARY TABLE tmp_treestats AS
