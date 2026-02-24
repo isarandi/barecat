@@ -226,10 +226,10 @@ This creates:
 
 .. code-block:: text
 
-   huge_dataset.barecat-sqlite-index
-   huge_dataset.barecat-shard-00000
-   huge_dataset.barecat-shard-00001
-   huge_dataset.barecat-shard-00002
+   huge_dataset.barecat                # SQLite index database
+   huge_dataset.barecat-shard-00000    # Data shard 0
+   huge_dataset.barecat-shard-00001    # Data shard 1
+   huge_dataset.barecat-shard-00002    # Data shard 2
    ...
 
 All shards are used transparently - just open the archive normally.

@@ -98,7 +98,7 @@ data. The original file becomes the shard (via symlink).
 
 This creates:
 
-- ``dataset.barecat-sqlite-index`` - New SQLite index
+- ``dataset.barecat`` - The SQLite index database
 - ``dataset.barecat-shard-00000`` - Symlink to ``dataset.tar``
 
 Requirements for ``--wrap``:

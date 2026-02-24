@@ -123,9 +123,9 @@ barecat mount mydata.barecat /mnt/mydata
 This may yield the following files:
 
 ```
-mydata.barecat-shard-00000
-mydata.barecat-shard-00001
-mydata.barecat-sqlite-index
+mydata.barecat                # SQLite index database
+mydata.barecat-shard-00000    # Data shard 0
+mydata.barecat-shard-00001    # Data shard 1
 ```
 
 The files can be extracted back out. Unix-like permissions, modification times, and owner info are

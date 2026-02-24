@@ -73,7 +73,7 @@ Barecat provides a unified ``barecat`` command with subcommands:
    barecat create mydata.barecat /path/to/images/
 
    # Create from find output
-   find /data -name '*.jpg' -print0 | barecat create -0 mydata.barecat
+   find /data -name '*.jpg' -print0 | barecat create mydata.barecat -T - -0
 
    # Extract archive
    barecat extract mydata.barecat -C /output/
@@ -91,9 +91,9 @@ This may yield the following files:
 
 .. code-block:: text
 
-   mydata.barecat-shard-00000
-   mydata.barecat-shard-00001
-   mydata.barecat-sqlite-index
+   mydata.barecat                # SQLite index database
+   mydata.barecat-shard-00000    # Data shard 0
+   mydata.barecat-shard-00001    # Data shard 1
 
 See :doc:`reference/cli` for a complete command reference.
 

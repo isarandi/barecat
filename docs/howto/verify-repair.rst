@@ -15,15 +15,14 @@ Verify all file checksums:
 
    barecat verify myarchive.barecat
 
-This reads every file and compares its CRC32C checksum against the index.
-Output:
+This reads every file and compares its CRC32C checksum against the index,
+showing a progress bar during verification. On success it prints a summary:
 
 .. code-block:: text
 
-   Verifying 1234567 files...
-   OK: All files verified successfully.
+   Verified 1234567 files (5.2 GB), all checksums OK.
 
-Or on failure:
+On failure, errors are printed to stderr and the command exits with code 1:
 
 .. code-block:: text
 
@@ -45,7 +44,11 @@ This verifies:
 - Index consistency (parent directories exist, etc.)
 - Shard file existence and sizes
 
-Much faster, but won't detect corrupted file contents.
+Much faster, but won't detect corrupted file contents. On success it prints:
+
+.. code-block:: text
+
+   Verified 1234567 files (quick check), all OK.
 
 Defragmentation
 ---------------

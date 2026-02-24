@@ -18,9 +18,9 @@ Given a base path ``myarchive.barecat``:
 
 .. code-block:: text
 
-   myarchive.barecat-sqlite-index    # SQLite database
-   myarchive.barecat-shard-00000     # First shard
-   myarchive.barecat-shard-00001     # Second shard (if needed)
+   myarchive.barecat                 # SQLite index database
+   myarchive.barecat-shard-00000     # First data shard
+   myarchive.barecat-shard-00001     # Second data shard (if needed)
    myarchive.barecat-shard-00002     # ...
 
 Shard numbers are zero-padded to 5 digits.
@@ -203,10 +203,10 @@ Using standard tools:
 .. code-block:: bash
 
    # List all files
-   sqlite3 myarchive.barecat-sqlite-index "SELECT path, shard, offset, size FROM files"
+   sqlite3 myarchive.barecat "SELECT path, shard, offset, size FROM files"
 
    # Extract a specific file
-   sqlite3 myarchive.barecat-sqlite-index \
+   sqlite3 myarchive.barecat \
        "SELECT shard, offset, size FROM files WHERE path='dir/file.txt'"
    # Returns: 0|1234|5678
 
@@ -219,7 +219,7 @@ Using Python without barecat:
 
    import sqlite3
 
-   conn = sqlite3.connect('myarchive.barecat-sqlite-index')
+   conn = sqlite3.connect('myarchive.barecat')
    cursor = conn.execute(
        "SELECT shard, offset, size FROM files WHERE path=?",
        ('dir/file.txt',)

@@ -84,7 +84,7 @@ This creates:
 
 .. code-block:: text
 
-   combined.barecat-sqlite-index     # New merged index
+   combined.barecat                  # New merged SQLite index
    combined.barecat-shard-00000 -> archive1.barecat-shard-00000
    combined.barecat-shard-00001 -> archive1.barecat-shard-00001
    combined.barecat-shard-00002 -> archive2.barecat-shard-00000

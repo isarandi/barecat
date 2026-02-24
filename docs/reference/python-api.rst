@@ -125,12 +125,14 @@ Barecat Class
       :param bool dir_exist_ok: Don't error if directory exists.
       :param bool file_exist_ok: Skip if file exists (for merges).
 
-   .. py:method:: add_by_path(filesystem_path, store_path=None)
+   .. py:method:: add_by_path(filesystem_path, store_path=None, dir_exist_ok=False)
 
-      Add a file from the filesystem.
+      Add a file or directory from the filesystem. If the path points to a directory,
+      the directory entry itself is added (not its contents recursively).
 
       :param str filesystem_path: Path on the filesystem.
       :param str store_path: Path in the archive (default: same as filesystem_path).
+      :param bool dir_exist_ok: Don't error if directory already exists in the archive.
 
    **Deletion**
 
@@ -211,7 +213,7 @@ BarecatDirInfo Class
 Index Class
 -----------
 
-.. py:class:: barecat.core.index.Index
+.. py:class:: barecat.Index
 
    Manages the SQLite database. Usually accessed via ``bc.index``.
 
@@ -228,10 +230,18 @@ Index Class
 
       :yields: BarecatDirInfo objects.
 
-   .. py:method:: iter_all_paths()
+   .. py:method:: iter_all_filepaths(order=Order.ANY)
 
-      Iterate over all file paths.
+      Iterate over all file paths (files only, not directories).
 
+      :param Order order: Ordering (ANY, PATH, ADDRESS, RANDOM).
+      :yields: Path strings.
+
+   .. py:method:: iter_all_paths(order=Order.ANY)
+
+      Iterate over all entry paths (both files and directories).
+
+      :param Order order: Ordering (ANY, PATH, ADDRESS, RANDOM).
       :yields: Path strings.
 
    .. py:method:: lookup_file(path)
@@ -431,6 +441,51 @@ DecodedView Class
       Remove all registered codecs.
 
    ``DecodedView`` wraps any ``MutableMapping[str, bytes]``.
+
+Deprecated Functions
+--------------------
+
+.. py:function:: barecat.open(path, mode='r', auto_codec=False, threadsafe_reader=True)
+
+   .. deprecated::
+      Use ``Barecat(path, readonly=True)`` or ``Barecat(path, readonly=False)`` directly.
+
+   Open a Barecat archive.
+
+   :param str path: Path to the archive (without suffix).
+   :param str mode: 'r' (read), 'r+' (read-write), 'w+' (overwrite), 'a+' (append), 'x+' (exclusive create).
+   :returns: Barecat instance.
+
+.. py:function:: barecat.extract(barecat_path, target_directory)
+
+   .. deprecated::
+      Use ``barecat extract`` CLI or the ``Barecat`` class directly instead.
+
+   Extract all files from a barecat archive to a directory.
+
+   :param str barecat_path: Path to the archive.
+   :param str target_directory: Directory to extract to.
+
+.. py:function:: barecat.read_index(path)
+
+   .. deprecated::
+      Use the ``barecat.Index`` class directly instead.
+
+   Read the index of a barecat archive as a dictionary.
+
+   :param str path: Path to the archive.
+   :returns: Dict mapping paths to ``(shard, offset, size)`` tuples.
+   :rtype: dict
+
+.. py:function:: barecat.write_index(dictionary, target_path)
+
+   .. deprecated::
+      Use the ``barecat.Index`` class directly instead.
+
+   Write a dictionary as a barecat index.
+
+   :param dict dictionary: Dict mapping paths to ``(shard, offset, size)`` tuples.
+   :param str target_path: Path for the output index.
 
 Deprecated: auto_codec Parameter
 --------------------------------

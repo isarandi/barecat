@@ -95,9 +95,9 @@ File naming
 
 A Barecat archive at path ``/data/myarchive`` consists of::
 
-    /data/myarchive-sqlite-index     # The SQLite database
-    /data/myarchive-shard-00000      # First shard
-    /data/myarchive-shard-00001      # Second shard (if needed)
+    /data/myarchive                  # The SQLite index database
+    /data/myarchive-shard-00000      # First data shard
+    /data/myarchive-shard-00001      # Second data shard (if needed)
     ...
 
 

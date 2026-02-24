@@ -39,7 +39,7 @@ Now create a barecat archive:
 
 This creates two files:
 
-- ``myarchive.barecat-sqlite-index`` - The SQLite database with file metadata
+- ``myarchive.barecat`` - The SQLite index database with file metadata
 - ``myarchive.barecat-shard-00000`` - The data file containing concatenated file contents
 
 Using Python

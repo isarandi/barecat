@@ -180,6 +180,62 @@ List archive contents.
    barecat list -lR myarchive.barecat
 
 
+barecat find
+~~~~~~~~~~~~
+
+Search for files in an archive (like ``/usr/bin/find``).
+
+**Synopsis:**
+
+.. code-block:: text
+
+   barecat find [options] ARCHIVE [PATH]
+
+**Description:**
+
+Searches for files and directories within the archive, supporting name, path,
+type, and size filters. By default searches from the archive root.
+
+**Options:**
+
+``PATH``
+   Starting path within the archive (default: root).
+
+``-name PATTERN``
+   Match basename against a glob pattern.
+
+``-path PATTERN``
+   Match full path against a glob pattern. Also available as ``-wholename``.
+
+``-type f|d``
+   Restrict to file type: ``f`` for files, ``d`` for directories.
+
+``-size [+-]N[kMG]``
+   Size filter: ``+N`` (larger than N), ``-N`` (smaller than N), ``N`` (exactly N).
+
+``-maxdepth N``
+   Maximum depth to descend.
+
+``-print0``
+   Print paths separated by null character (for use with ``xargs -0``).
+
+**Examples:**
+
+.. code-block:: bash
+
+   # Find all JPEG files
+   barecat find myarchive.barecat -name '*.jpg'
+
+   # Find large files
+   barecat find myarchive.barecat -size +100M -type f
+
+   # Find directories under a path
+   barecat find myarchive.barecat subdir/ -type d
+
+   # Pipe to xargs
+   barecat find myarchive.barecat -name '*.tmp' -print0 | xargs -0 echo
+
+
 barecat cat
 ~~~~~~~~~~~
 
@@ -273,6 +329,47 @@ Prints disk usage by directory, similar to the Unix ``du`` command.
 
 ``-d, --max-depth N``
    Maximum depth to show.
+
+
+barecat tree
+~~~~~~~~~~~~
+
+Display a directory tree of the archive contents.
+
+**Synopsis:**
+
+.. code-block:: text
+
+   barecat tree [options] ARCHIVE [PATH]
+
+**Description:**
+
+Prints a tree-style listing of the archive directory structure, similar to the
+Unix ``tree`` command.
+
+**Options:**
+
+``PATH``
+   Starting path within the archive (default: root).
+
+``-L, --level N``
+   Limit display depth to N levels.
+
+``-d, --dirs-only``
+   List directories only, omitting files.
+
+**Examples:**
+
+.. code-block:: bash
+
+   # Show full tree
+   barecat tree myarchive.barecat
+
+   # Show tree starting from subdirectory, 2 levels deep
+   barecat tree -L 2 myarchive.barecat subdir/
+
+   # Show only directory structure
+   barecat tree -d myarchive.barecat
 
 
 barecat ncdu
@@ -409,6 +506,116 @@ Merges multiple archives (barecat, tar, or zip) into a single barecat archive.
 
    # Merge mixed archive types
    barecat merge -o combined.barecat data.tar.gz more.zip existing.barecat
+
+
+barecat subset
+~~~~~~~~~~~~~~
+
+Create a new archive containing a subset of files from an existing archive.
+
+**Synopsis:**
+
+.. code-block:: text
+
+   barecat subset [options] ARCHIVE -o OUTPUT
+
+**Description:**
+
+Creates a filtered copy of an archive. Files can be selected using glob
+patterns or rsync-style include/exclude rules.
+
+**Options:**
+
+``-o, --output OUTPUT``
+   Output archive path (required).
+
+``-s, --shard-size-limit SIZE``
+   Shard size limit (e.g., ``1G``, ``500M``).
+
+``-f, --force``
+   Overwrite output if it already exists.
+
+``--pattern GLOB``
+   Only include files matching glob pattern. Incompatible with ``-i``/``-x``.
+
+``-i, --include PATTERN``
+   Include files matching glob pattern (rsync-style, repeatable).
+
+``-x, --exclude PATTERN``
+   Exclude files matching glob pattern (rsync-style, repeatable).
+
+**Examples:**
+
+.. code-block:: bash
+
+   # Extract only JPEG files into a new archive
+   barecat subset myarchive.barecat -o images.barecat --pattern '**/*.jpg'
+
+   # Include/exclude with rsync-style rules
+   barecat subset myarchive.barecat -o filtered.barecat -i '**/*.png' -x '**/thumbs/**'
+
+   # Overwrite existing output
+   barecat subset myarchive.barecat -o subset.barecat -f --pattern 'train/**'
+
+
+barecat rsync
+~~~~~~~~~~~~~
+
+rsync-like sync between local filesystem and barecat archives.
+
+**Synopsis:**
+
+.. code-block:: text
+
+   barecat rsync [options] SRC... DEST
+
+**Description:**
+
+Synchronizes files between the local filesystem and barecat archives. Uses
+``archive.barecat:path/`` syntax to specify paths inside an archive. The
+source or destination (or both) can be archive paths.
+
+**Options:**
+
+``-n, --dry-run``
+   Show what would be done without making changes.
+
+``-v, --verbose``
+   Verbose output.
+
+``--progress``
+   Show progress.
+
+``--delete``
+   Delete extraneous files from the destination.
+
+``-c, --checksum``
+   Compare files by checksum instead of size/mtime.
+
+``-u, --update``
+   Skip files that are newer on the destination.
+
+``--include PAT``
+   Include pattern (repeatable).
+
+``--exclude PAT``
+   Exclude pattern (repeatable).
+
+**Examples:**
+
+.. code-block:: bash
+
+   # Copy local directory into archive
+   barecat rsync /data/images/ myarchive.barecat:images/
+
+   # Extract from archive to local directory
+   barecat rsync myarchive.barecat:images/ /data/images/
+
+   # Sync with delete (remove files in dest not in source)
+   barecat rsync --delete /data/ myarchive.barecat:data/
+
+   # Dry run to preview changes
+   barecat rsync -nv /data/ myarchive.barecat:data/
 
 
 barecat convert

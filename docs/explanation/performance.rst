@@ -185,7 +185,7 @@ Barecat was designed for network filesystems (NFS, Lustre, GPFS).
 
    .. code-block:: bash
 
-      cp archive.barecat-sqlite-index /local/tmp/
+      cp archive.barecat /local/tmp/
       ln -sf /network/archive.barecat-shard-* /local/tmp/
       # Use /local/tmp/archive.barecat
 
