@@ -1061,7 +1061,7 @@ def _handle_extract(args):
                 elif bc.index.isdir(path):
                     for dirpath, dirnames, filenames in bc.walk(path):
                         for fname in progressbar(filenames):
-                            fpath = osp.join(dirpath, fname) if dirpath else fname
+                            fpath = osp.join(dirpath, fname)
                             extract_file(bc, fpath)
                 else:
                     print(f'Error: {path} not found in archive', file=sys.stderr)

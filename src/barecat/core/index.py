@@ -836,7 +836,7 @@ class Index(AbstractContextManager):
         """
         for dinfo, subdirs, files in self.walk_infos(rootitem, bufsize=bufsize):
             yield (
-                dinfo.path,
+                dinfo.path or '.',
                 [osp.basename(d.path) for d in subdirs],
                 [osp.basename(f.path) for f in files],
             )

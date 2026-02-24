@@ -331,7 +331,7 @@ class TestWalk:
                 # Should be (dirpath, dirnames, filenames) tuples
                 assert len(results) == 3
 
-                root_entry = next(r for r in results if r[0] == '')
+                root_entry = next(r for r in results if r[0] == '.')
                 assert 'a.txt' in root_entry[2]
                 assert 'dir' in root_entry[1]
 

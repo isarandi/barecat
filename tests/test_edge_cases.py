@@ -50,7 +50,7 @@ def test_empty_archive_operations(archive):
     with Barecat(archive, readonly=False) as bc:
         assert list(bc.keys()) == []
         assert len(bc) == 0
-        assert list(bc.walk('')) == [('', [], [])]
+        assert list(bc.walk('')) == [('.', [], [])]
         assert bc.listdir('') == []
 
         with pytest.raises(KeyError):
@@ -664,7 +664,7 @@ def test_walk_empty_archive(archive):
 
     with Barecat(archive, readonly=True) as bc:
         result = list(bc.walk(''))
-        assert result == [('', [], [])]
+        assert result == [('.', [], [])]
 
 
 def test_walk_single_file_at_root(archive):
@@ -674,7 +674,7 @@ def test_walk_single_file_at_root(archive):
 
     with Barecat(archive, readonly=True) as bc:
         result = list(bc.walk(''))
-        assert result == [('', [], ['file.txt'])]
+        assert result == [('.', [], ['file.txt'])]
 
 
 def test_walk_complex_structure(archive):
@@ -689,7 +689,7 @@ def test_walk_complex_structure(archive):
         result = list(bc.walk(''))
         # Check we got all directories
         dirs_visited = [r[0] for r in result]
-        assert '' in dirs_visited
+        assert '.' in dirs_visited
         assert 'a' in dirs_visited
         assert 'a/b' in dirs_visited
         assert 'a/b/c' in dirs_visited

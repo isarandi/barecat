@@ -503,7 +503,7 @@ class BarecatShell(cmd.Cmd):
         # Use walk to traverse directory tree
         for dirpath, dirnames, filenames in self.bc.walk(archive_dir):
             for filename in filenames:
-                archive_path = osp.join(dirpath, filename) if dirpath else filename
+                archive_path = osp.join(dirpath, filename)
                 # Compute relative path within the extracted dir
                 if archive_dir:
                     rel_path = archive_path[len(archive_dir) + 1 :]
