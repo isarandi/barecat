@@ -99,6 +99,7 @@ test = [
     "pytest>=7.0",
     "pytest-cov",
     "hypothesis",
+    "numpy",
 ]
 lint = [
     "ruff",
