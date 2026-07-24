@@ -578,7 +578,17 @@ def main():
     p.add_argument('-n', '--dry-run', action='store_true', help='Show what would be done')
     p.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
     p.add_argument('--progress', action='store_true', help='Show progress')
-    p.add_argument('--delete', action='store_true', help='Delete extraneous files from dest')
+    p.add_argument(
+        '--delete',
+        action='store_true',
+        help='Delete extraneous files from dest, within the subtrees the directory '
+        'sources map onto (a file source deletes nothing, as in rsync)',
+    )
+    p.add_argument(
+        '--delete-excluded',
+        action='store_true',
+        help='Also delete excluded files from dest (implies --delete)',
+    )
     p.add_argument(
         '-c', '--checksum', action='store_true', help='Compare by checksum not size/mtime'
     )
@@ -929,7 +939,8 @@ def main():
         sources = args.paths[:-1]
         dest = args.paths[-1]
         options = RsyncOptions(
-            delete=args.delete,
+            delete=args.delete or args.delete_excluded,
+            delete_excluded=args.delete_excluded,
             dry_run=args.dry_run,
             verbose=args.verbose,
             progress=args.progress,
@@ -937,6 +948,7 @@ def main():
             update=args.update,
             include=args.include,
             exclude=args.exclude,
+            filter_rules=_build_filter_rules_from_argv() or None,
         )
         rsync(sources, dest, options)
 

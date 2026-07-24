@@ -815,3 +815,236 @@ class TestParsePathEdgeCases:
         """barecat:// URL without proper format."""
         with pytest.raises(ValueError):
             parse_path('barecat://hostonly')
+
+
+class TestRsyncDeleteScope:
+    """--delete bookkeeping and scoping (audit items 1, 25, 55)."""
+
+    @pytest.fixture
+    def tmpdir(self):
+        with tempfile.TemporaryDirectory() as d:
+            yield d
+
+    @staticmethod
+    def _make_archive(path, contents):
+        with barecat.Barecat(path, readonly=False) as bc:
+            for p, data in contents.items():
+                bc[p] = data
+
+    @staticmethod
+    def _files(path):
+        with barecat.Barecat(path, readonly=True) as bc:
+            return sorted(bc.files())
+
+    def test_file_source_deletes_nothing(self, tmpdir):
+        """The reported data loss: a file source used to empty the whole archive."""
+        archive = osp.join(tmpdir, 'a.barecat')
+        self._make_archive(archive, {'dirA/keep1.txt': b'1', 'dirB/keep2.txt': b'2'})
+
+        newfile = osp.join(tmpdir, 'newfile.txt')
+        with open(newfile, 'w') as f:
+            f.write('new')
+
+        rsync([newfile], f'{archive}::', RsyncOptions(delete=True))
+
+        assert self._files(archive) == ['dirA/keep1.txt', 'dirB/keep2.txt', 'newfile.txt']
+
+    def test_delete_is_confined_to_the_synced_subtree(self, tmpdir):
+        """A directory source prunes only under where it maps, not the whole archive."""
+        archive = osp.join(tmpdir, 'a.barecat')
+        self._make_archive(
+            archive,
+            {'src/stale.txt': b'old', 'src/keep.txt': b'old', 'other/untouched.txt': b'x'},
+        )
+
+        src = osp.join(tmpdir, 'src')
+        os.makedirs(src)
+        with open(osp.join(src, 'keep.txt'), 'w') as f:
+            f.write('new')
+
+        rsync([src], f'{archive}::', RsyncOptions(delete=True))
+
+        assert self._files(archive) == ['other/untouched.txt', 'src/keep.txt']
+
+    def test_unchanged_files_survive_delete(self, tmpdir):
+        """Files skipped as up-to-date count as delivered, not extraneous."""
+        archive = osp.join(tmpdir, 'a.barecat')
+        src = osp.join(tmpdir, 'src')
+        os.makedirs(src)
+        for name in ('a.txt', 'b.txt'):
+            with open(osp.join(src, name), 'w') as f:
+                f.write(name)
+
+        rsync([src + '/'], f'{archive}::')
+        assert self._files(archive) == ['a.txt', 'b.txt']
+
+        # Second pass: every file is unchanged, so every one is skipped
+        rsync([src + '/'], f'{archive}::', RsyncOptions(delete=True))
+        assert self._files(archive) == ['a.txt', 'b.txt']
+
+    def test_ignore_existing_files_survive_delete(self, tmpdir):
+        """--ignore-existing keeps the dest copy; --delete must not then remove it."""
+        archive = osp.join(tmpdir, 'a.barecat')
+        self._make_archive(archive, {'a.txt': b'dest'})
+
+        src = osp.join(tmpdir, 'src')
+        os.makedirs(src)
+        with open(osp.join(src, 'a.txt'), 'w') as f:
+            f.write('source')
+
+        rsync([src + '/'], f'{archive}::', RsyncOptions(delete=True, ignore_existing=True))
+
+        with barecat.Barecat(archive, readonly=True) as bc:
+            assert bc['a.txt'] == b'dest'
+
+    def test_excluded_dest_files_are_protected(self, tmpdir):
+        """Without --delete-excluded, excluded destination files stay (rsync's rule)."""
+        archive = osp.join(tmpdir, 'a.barecat')
+        self._make_archive(archive, {'keep.log': b'log', 'stale.txt': b'stale'})
+
+        src = osp.join(tmpdir, 'src')
+        os.makedirs(src)
+        with open(osp.join(src, 'new.txt'), 'w') as f:
+            f.write('new')
+
+        rsync([src + '/'], f'{archive}::', RsyncOptions(delete=True, exclude=['*.log']))
+        assert self._files(archive) == ['keep.log', 'new.txt']
+
+        rsync(
+            [src + '/'],
+            f'{archive}::',
+            RsyncOptions(delete=True, delete_excluded=True, exclude=['*.log']),
+        )
+        assert self._files(archive) == ['new.txt']
+
+    def test_local_delete_stays_inside_the_synced_subtree(self, tmpdir):
+        """The archive->local direction removes real files; keep it scoped."""
+        archive = osp.join(tmpdir, 'a.barecat')
+        self._make_archive(archive, {'data/keep.txt': b'k'})
+
+        dest = osp.join(tmpdir, 'dest')
+        os.makedirs(osp.join(dest, 'data'))
+        os.makedirs(osp.join(dest, 'unrelated'))
+        with open(osp.join(dest, 'data', 'stale.txt'), 'w') as f:
+            f.write('stale')
+        with open(osp.join(dest, 'unrelated', 'mine.txt'), 'w') as f:
+            f.write('mine')
+
+        # No trailing slash: the source maps onto dest/data, so only that subtree
+        # is prunable. (With 'data/' it maps onto dest itself and rsync would
+        # rightly prune all of dest — see the contents-mode test below.)
+        rsync([f'{archive}::data'], dest, RsyncOptions(delete=True))
+
+        assert osp.exists(osp.join(dest, 'data', 'keep.txt'))
+        assert not osp.exists(osp.join(dest, 'data', 'stale.txt'))
+        assert osp.exists(osp.join(dest, 'unrelated', 'mine.txt'))
+
+    def test_local_delete_contents_mode_covers_the_whole_dest(self, tmpdir):
+        """A trailing slash maps the source onto dest itself, so all of dest is in scope."""
+        archive = osp.join(tmpdir, 'a.barecat')
+        self._make_archive(archive, {'data/keep.txt': b'k'})
+
+        dest = osp.join(tmpdir, 'dest')
+        os.makedirs(osp.join(dest, 'unrelated'))
+        with open(osp.join(dest, 'unrelated', 'stale.txt'), 'w') as f:
+            f.write('stale')
+
+        rsync([f'{archive}::data/'], dest, RsyncOptions(delete=True))
+
+        assert osp.exists(osp.join(dest, 'keep.txt'))
+        assert not osp.exists(osp.join(dest, 'unrelated', 'stale.txt'))
+
+    def test_single_file_inner_path_transfers(self, tmpdir):
+        """A single-file inner path used to match nothing and sync zero files (item 25)."""
+        archive = osp.join(tmpdir, 'a.barecat')
+        self._make_archive(archive, {'data/one.txt': b'one', 'data/two.txt': b'two'})
+
+        dest = osp.join(tmpdir, 'dest')
+        rsync([f'{archive}::data/one.txt'], dest)
+
+        assert open(osp.join(dest, 'one.txt')).read() == 'one'
+        assert not osp.exists(osp.join(dest, 'two.txt'))
+
+    def test_single_file_inner_path_deletes_nothing(self, tmpdir):
+        """Item 25 must not hand item 1's delete pass a file source to act on."""
+        archive = osp.join(tmpdir, 'a.barecat')
+        self._make_archive(archive, {'data/one.txt': b'one'})
+
+        dest = osp.join(tmpdir, 'dest')
+        os.makedirs(dest)
+        with open(osp.join(dest, 'mine.txt'), 'w') as f:
+            f.write('mine')
+
+        rsync([f'{archive}::data/one.txt'], dest, RsyncOptions(delete=True))
+
+        assert osp.exists(osp.join(dest, 'one.txt'))
+        assert osp.exists(osp.join(dest, 'mine.txt'))
+
+    def test_single_file_inner_path_archive_to_archive(self, tmpdir):
+        """Same single-file mapping for the archive->archive direction."""
+        src_archive = osp.join(tmpdir, 'src.barecat')
+        dest_archive = osp.join(tmpdir, 'dest.barecat')
+        self._make_archive(src_archive, {'data/one.txt': b'one', 'data/two.txt': b'two'})
+        self._make_archive(dest_archive, {'mine.txt': b'mine'})
+
+        rsync([f'{src_archive}::data/one.txt'], f'{dest_archive}::', RsyncOptions(delete=True))
+
+        assert self._files(dest_archive) == ['mine.txt', 'one.txt']
+
+
+class TestRsyncFilterDialect:
+    """Include/exclude pattern semantics (audit item 55)."""
+
+    @pytest.fixture
+    def tree(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = osp.join(d, 'src')
+            for rel in ('a.log', 'a.txt', 'deep/b.log', 'deep/b.txt', 'logs/c.txt',
+                        'deep/logs/d.txt'):
+                full = osp.join(src, rel)
+                os.makedirs(osp.dirname(full), exist_ok=True)
+                with open(full, 'w') as f:
+                    f.write(rel)
+            yield d
+
+    @staticmethod
+    def _sync(tree, **kwargs):
+        archive = osp.join(tree, 'a.barecat')
+        rsync([osp.join(tree, 'src') + '/'], f'{archive}::', RsyncOptions(**kwargs))
+        with barecat.Barecat(archive, readonly=True) as bc:
+            return sorted(bc.files())
+
+    def test_unanchored_pattern_matches_at_any_depth(self, tree):
+        """'*.log' excludes nested logs too, like tar, zip, rsync and git."""
+        assert self._sync(tree, exclude=['*.log']) == [
+            'a.txt',
+            'deep/b.txt',
+            'deep/logs/d.txt',
+            'logs/c.txt',
+        ]
+
+    def test_leading_slash_anchors_at_the_root(self, tree):
+        assert self._sync(tree, exclude=['/logs/*']) == [
+            'a.log',
+            'a.txt',
+            'deep/b.log',
+            'deep/b.txt',
+            'deep/logs/d.txt',
+        ]
+
+    def test_unanchored_directory_pattern_matches_at_any_depth(self, tree):
+        assert self._sync(tree, exclude=['logs/']) == [
+            'a.log',
+            'a.txt',
+            'deep/b.log',
+            'deep/b.txt',
+        ]
+
+    def test_include_rescues_from_a_later_exclude(self, tree):
+        """First match wins: '*.txt' included before '*' excludes everything else."""
+        assert self._sync(tree, filter_rules=[('+', '*.txt'), ('-', '*')]) == [
+            'a.txt',
+            'deep/b.txt',
+            'deep/logs/d.txt',
+            'logs/c.txt',
+        ]

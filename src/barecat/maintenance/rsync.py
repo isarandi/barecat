@@ -11,7 +11,6 @@ Supports:
 
 import os
 import os.path as osp
-import fnmatch
 import re
 import shutil
 import time
@@ -21,6 +20,7 @@ from typing import Optional
 
 import barecat
 from ..util.misc import exists as barecat_exists
+from ..util.pathfilter import first_match_wins, rules_from_include_exclude
 
 
 class PathType(Enum):
@@ -88,6 +88,7 @@ class RsyncOptions:
     """rsync-like options."""
 
     delete: bool = False  # --delete: remove extraneous files from dest
+    delete_excluded: bool = False  # --delete-excluded: also delete excluded dest files
     dry_run: bool = False  # -n, --dry-run: show what would be done
     verbose: bool = False  # -v, --verbose: increase verbosity
     progress: bool = False  # --progress: show progress
@@ -101,11 +102,60 @@ class RsyncOptions:
     min_size: int = None  # --min-size: skip files smaller than this
     include: list = None  # --include patterns
     exclude: list = None  # --exclude patterns
+    filter_rules: list = None  # ordered ('+'/'-', pattern) rules; first match wins
     recursive: bool = True  # -r (default True for dirs)
 
     def __post_init__(self):
         self.include = self.include or []
         self.exclude = self.exclude or []
+        if self.filter_rules is None:
+            # Callers that know the command-line order pass filter_rules directly;
+            # otherwise put includes first so `--include '*.jpg' --exclude '*'` works.
+            self.filter_rules = rules_from_include_exclude(self.include, self.exclude)
+
+
+class _TransferRecord:
+    """What the sync pass delivered, and where ``--delete`` may then look.
+
+    Deletion used to re-derive an "expected" set by walking the sources a second
+    time, which drifted from what the transfer actually did and, for a file
+    source, came back empty — emptying the destination. Instead the sync pass
+    records as it goes:
+
+    - **delivered**: every destination path this transfer accounted for. Recorded
+      before the up-to-date/``--ignore-existing``/size-filter checks, not after,
+      because a path the transfer decided to leave alone is still a path the
+      source provides. Over-recording can only prevent a deletion; under-recording
+      deletes data, so the bias is deliberate.
+    - **scopes**: the destination subtrees a *directory* source mapped onto.
+      Deletion is confined to these, so `rsync file.txt archive::` deletes
+      nothing, matching rsync, where a non-directory argument never prunes.
+    """
+
+    def __init__(self):
+        self.delivered = set()
+        self.scopes = []
+
+    def deliver(self, dest_path: str):
+        self.delivered.add(dest_path)
+
+    def add_scope(self, dest_prefix: str):
+        """Authorize deletion under a destination subtree ('' = the whole dest).
+
+        The prefix must already be in the same form as the delivered paths —
+        archive-relative for archive destinations, filesystem paths for local
+        ones — since the two directions never share a record.
+        """
+        self.scopes.append(dest_prefix.rstrip('/'))
+
+    def in_scope(self, dest_path: str) -> bool:
+        return any(
+            scope == '' or dest_path == scope or dest_path.startswith(scope + '/')
+            for scope in self.scopes
+        )
+
+    def is_extraneous(self, dest_path: str) -> bool:
+        return self.in_scope(dest_path) and dest_path not in self.delivered
 
 
 def rsync(sources: list[str], dest: str, options: RsyncOptions = None):
@@ -169,19 +219,20 @@ def _rsync_to_archive(sources: list[ParsedPath], dest: ParsedPath, options: Rsyn
 
     try:
         dest_prefix = dest.inner_path
+        record = _TransferRecord()
 
         for src in sources:
             if src.path_type == PathType.LOCAL:
-                _sync_local_to_archive(src, dest_bc, dest_prefix, options)
+                _sync_local_to_archive(src, dest_bc, dest_prefix, options, record)
             elif src.is_tar_zip:
-                _sync_tarzip_to_archive(src, dest_bc, dest_prefix, options)
+                _sync_tarzip_to_archive(src, dest_bc, dest_prefix, options, record)
             elif src.is_archive:
-                _sync_archive_to_archive(src, dest_bc, dest_prefix, options)
+                _sync_archive_to_archive(src, dest_bc, dest_prefix, options, record)
             else:
                 raise NotImplementedError(f'Source type {src.path_type} not yet supported')
 
         if options.delete and dest_bc is not None:
-            _delete_extraneous_in_archive(sources, dest_bc, dest_prefix, options)
+            _delete_extraneous_in_archive(record, dest_bc, options)
     finally:
         if dest_bc is not None:
             dest_bc.close()
@@ -192,17 +243,18 @@ def _rsync_to_local(sources: list[ParsedPath], dest: ParsedPath, options: RsyncO
 
     dest_dir = dest.filesystem_path
     os.makedirs(dest_dir, exist_ok=True)
+    record = _TransferRecord()
 
     for src in sources:
         if src.is_archive:
-            _sync_archive_to_local(src, dest_dir, options)
+            _sync_archive_to_local(src, dest_dir, options, record)
         elif src.is_tar_zip:
-            _sync_tarzip_to_local(src, dest_dir, options)
+            _sync_tarzip_to_local(src, dest_dir, options, record)
         else:
             raise ValueError('Use regular rsync for local-to-local sync')
 
     if options.delete:
-        _delete_extraneous_local(sources, dest_dir, options)
+        _delete_extraneous_local(record, dest_dir, options)
 
 
 # -----------------------------------------------------------------------------
@@ -428,6 +480,24 @@ def _open_archive(parsed: ParsedPath, readonly: bool):
         raise ValueError(f'Cannot open archive for path type: {parsed.path_type}')
 
 
+def _inner_path_is_file(archive, inner_path: str) -> bool:
+    """Whether an inner path names one file rather than a directory (audit item 25).
+
+    A file inner path must not be turned into an ``inner/**`` glob: that matches
+    nothing, so the transfer silently moves zero files.
+    """
+    if not inner_path:
+        return False
+    if hasattr(archive, 'index'):
+        return archive.index.isfile(inner_path)
+    # Remote client: an exact-path hit that is a file
+    try:
+        infos = archive.glob_infos(inner_path)
+    except Exception:
+        return False
+    return any(getattr(i, 'path', None) == inner_path and i.isfile() for i in infos)
+
+
 def _get_file_infos(archive, pattern: str):
     """Get file infos from any archive type (local or remote).
 
@@ -465,7 +535,11 @@ def _lookup_file(archive, path: str):
 
 
 def _sync_local_to_archive(
-    src: ParsedPath, dest_bc: barecat.Barecat, dest_prefix: str, options: RsyncOptions
+    src: ParsedPath,
+    dest_bc: barecat.Barecat,
+    dest_prefix: str,
+    options: RsyncOptions,
+    record: '_TransferRecord' = None,
 ):
     """Sync local directory/file to archive."""
     from ..util.progbar import progressbar
@@ -484,20 +558,27 @@ def _sync_local_to_archive(
         prefix = osp.join(dest_prefix, osp.basename(src_path))
 
     if osp.isfile(src_path):
-        _sync_one_file_to_archive(src_path, prefix, dest_bc, options)
+        # A file source never authorizes deletion, so no scope is registered.
+        _sync_one_file_to_archive(src_path, prefix, dest_bc, options, record)
     else:
+        if record is not None:
+            record.add_scope(prefix.lstrip('/'))
         # Collect files for progress bar
         file_list = []
         for root, dirs, files in os.walk(src_path):
-            dirs[:] = [d for d in dirs if not _is_excluded(d, options)]
             rel_root = osp.relpath(root, src_path)
             if rel_root == '.':
                 rel_root = ''
+            dirs[:] = [
+                d
+                for d in dirs
+                if not _prunes_directory(osp.join(rel_root, d) if rel_root else d, options)
+            ]
             for fname in files:
-                if _is_excluded(fname, options):
+                rel_path = osp.join(rel_root, fname) if rel_root else fname
+                if _is_excluded(rel_path, options):
                     continue
                 local_path = osp.join(root, fname)
-                rel_path = osp.join(rel_root, fname) if rel_root else fname
                 archive_path = osp.join(prefix, rel_path) if prefix else rel_path
                 file_list.append((local_path, archive_path))
 
@@ -505,7 +586,7 @@ def _sync_local_to_archive(
             file_list = progressbar(file_list, desc='Adding', unit='files')
 
         for local_path, archive_path in file_list:
-            _sync_one_file_to_archive(local_path, archive_path, dest_bc, options)
+            _sync_one_file_to_archive(local_path, archive_path, dest_bc, options, record)
 
 
 def _sync_one_file_to_archive(
@@ -513,11 +594,16 @@ def _sync_one_file_to_archive(
     archive_path: str,
     dest_bc,  # Optional[barecat.Barecat] - None in dry-run when archive doesn't exist
     options: RsyncOptions,
+    record: '_TransferRecord' = None,
 ):
     """Sync a single file from local to archive."""
     from ..core.types import BarecatFileInfo
 
     archive_path = archive_path.lstrip('/')
+    if record is not None:
+        # Before the skip checks below: the source provides this path either way,
+        # so --delete must not treat it as extraneous.
+        record.deliver(archive_path)
     src_stat = os.stat(local_path)
 
     # Size filters
@@ -597,6 +683,7 @@ def _sync_tarzip_to_archive(
     dest_bc,  # Optional - None in dry-run when archive doesn't exist
     dest_prefix: str,
     options: RsyncOptions,
+    record: '_TransferRecord' = None,
 ):
     """Sync tar/zip archive to barecat archive."""
     from ..formats.archive_formats import iter_archive
@@ -625,6 +712,9 @@ def _sync_tarzip_to_archive(
                     break
         prefix = osp.join(dest_prefix, basename) if dest_prefix else basename
 
+    saw_entry = False
+    file_source = False
+
     for src_info, fileobj in iter_archive(src_path):
         if not src_info.isfile():
             continue
@@ -637,10 +727,12 @@ def _sync_tarzip_to_archive(
                 continue
             # Compute relative path from inner path
             rel_path = src_info.path[len(src_inner) :].lstrip('/')
+            file_source = src_info.path == src_inner
         else:
             rel_path = src_info.path
+        saw_entry = True
 
-        if _is_excluded(osp.basename(rel_path), options):
+        if _is_excluded(rel_path, options):
             if fileobj:
                 fileobj.read()
             continue
@@ -657,7 +749,9 @@ def _sync_tarzip_to_archive(
 
         # Compute destination path
         dest_path = osp.join(prefix, rel_path) if prefix else rel_path
-        dest_path = dest_path.lstrip('/')
+        dest_path = dest_path.lstrip('/').rstrip('/')
+        if record is not None:
+            record.deliver(dest_path)
 
         # Check if needs sync
         exists = dest_bc is not None and dest_path in dest_bc
@@ -741,13 +835,32 @@ def _sync_tarzip_to_archive(
             else:
                 dest_bc.add(finfo, data=b'')
 
+    if record is not None and saw_entry and not file_source:
+        # A tar/zip inner path has no directory entry to test, so scope is only
+        # authorized once the source has actually yielded something: a mistyped
+        # inner path yields nothing and must not license deleting the subtree.
+        record.add_scope(prefix.lstrip('/'))
 
-def _sync_archive_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions):
+
+def _sync_archive_to_local(
+    src: ParsedPath, dest_dir: str, options: RsyncOptions, record: '_TransferRecord' = None
+):
     """Sync archive (local or remote) to local directory."""
     from ..util.progbar import progressbar
 
     with _open_archive(src, readonly=True) as src_bc:
         src_prefix = src.inner_path
+
+        if _inner_path_is_file(src_bc, src_prefix):
+            # A single-file inner path is a file source: transfer that one entry to
+            # dest_dir/basename (mirroring the tar/zip branch) and authorize no
+            # deletion scope, exactly as a plain file argument would.
+            info = _lookup_file(src_bc, src_prefix)
+            local_path = osp.join(dest_dir, osp.basename(src_prefix))
+            if record is not None:
+                record.deliver(local_path)
+            _sync_one_file_to_local(src_bc, info, local_path, options)
+            return
 
         # Determine destination based on trailing slash
         if src.contents_mode:
@@ -761,6 +874,9 @@ def _sync_archive_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions
                 basename = src.archive_basename
             out_dir = osp.join(dest_dir, basename)
 
+        if record is not None:
+            record.add_scope(out_dir)
+
         # Iterate files with metadata (works for both local and remote)
         pattern = f'{src_prefix}/**' if src_prefix else '**'
         infos = _get_file_infos(src_bc, pattern)
@@ -771,8 +887,6 @@ def _sync_archive_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions
         for info in infos:
             if not info.isfile():  # skip directories
                 continue
-            if _is_excluded(osp.basename(info.path), options):
-                continue
 
             # Compute relative path
             if src_prefix:
@@ -780,7 +894,12 @@ def _sync_archive_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions
             else:
                 rel_path = info.path
 
+            if _is_excluded(rel_path, options):
+                continue
+
             local_path = osp.join(out_dir, rel_path)
+            if record is not None:
+                record.deliver(local_path)
             _sync_one_file_to_local(src_bc, info, local_path, options)
 
 
@@ -853,7 +972,9 @@ def _sync_one_file_to_local(
         os.utime(local_path, ns=(src_info.mtime_ns, src_info.mtime_ns))
 
 
-def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions):
+def _sync_tarzip_to_local(
+    src: ParsedPath, dest_dir: str, options: RsyncOptions, record: '_TransferRecord' = None
+):
     """Sync tar/zip archive to local directory."""
     from ..formats.archive_formats import iter_archive
 
@@ -879,6 +1000,9 @@ def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions)
                     break
         out_dir = osp.join(dest_dir, basename)
 
+    saw_entry = False
+    file_source = False
+
     for src_info, fileobj in iter_archive(src_path):
         if not src_info.isfile():
             continue
@@ -891,10 +1015,12 @@ def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions)
                 continue
             # Compute relative path from inner path
             rel_path = src_info.path[len(src_inner) :].lstrip('/')
+            file_source = src_info.path == src_inner
         else:
             rel_path = src_info.path
+        saw_entry = True
 
-        if _is_excluded(osp.basename(rel_path), options):
+        if _is_excluded(rel_path, options):
             if fileobj:
                 fileobj.read()
             continue
@@ -909,7 +1035,9 @@ def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions)
                 fileobj.read()
             continue
 
-        local_path = osp.join(out_dir, rel_path)
+        local_path = osp.join(out_dir, rel_path) if rel_path else out_dir
+        if record is not None:
+            record.deliver(local_path)
         exists = osp.exists(local_path)
 
         # --existing: only update files that already exist
@@ -976,17 +1104,31 @@ def _sync_tarzip_to_local(src: ParsedPath, dest_dir: str, options: RsyncOptions)
             mtime_ns = int(src_info.mtime_ns)
             os.utime(local_path, ns=(mtime_ns, mtime_ns))
 
+    if record is not None and saw_entry and not file_source:
+        record.add_scope(out_dir)
+
 
 def _sync_archive_to_archive(
     src: ParsedPath,
     dest_bc,  # Optional - None in dry-run when archive doesn't exist
     dest_prefix: str,
     options: RsyncOptions,
+    record: '_TransferRecord' = None,
 ):
     """Sync from one archive to another (merge). Source can be local or remote."""
 
     with _open_archive(src, readonly=True) as src_bc:
         src_prefix = src.inner_path
+
+        if _inner_path_is_file(src_bc, src_prefix):
+            # File source (audit item 25): one entry to dest_prefix/basename, and
+            # no deletion scope — same contract as a plain file argument.
+            src_info = _lookup_file(src_bc, src_prefix)
+            dest_path = osp.join(dest_prefix, osp.basename(src_prefix)).lstrip('/')
+            if record is not None:
+                record.deliver(dest_path)
+            _sync_one_archive_entry(src_bc, src_info, dest_path, dest_bc, options)
+            return
 
         # Determine destination prefix based on trailing slash
         if src.contents_mode:
@@ -998,12 +1140,23 @@ def _sync_archive_to_archive(
                 basename = src.archive_basename
             prefix = osp.join(dest_prefix, basename) if dest_prefix else basename
 
+        if record is not None:
+            record.add_scope(prefix.lstrip('/'))
+
         # Iterate source files with metadata (works for both local and remote)
         pattern = f'{src_prefix}/**' if src_prefix else '**'
         for src_info in _get_file_infos(src_bc, pattern):
             if not src_info.isfile():
                 continue
-            if _is_excluded(osp.basename(src_info.path), options):
+
+            # Compute the transfer-relative path first: filters and size limits are
+            # all expressed relative to the source root, not to the archive root.
+            if src_prefix:
+                rel_path = src_info.path[len(src_prefix) :].lstrip('/')
+            else:
+                rel_path = src_info.path
+
+            if _is_excluded(rel_path, options):
                 continue
 
             # Size filters
@@ -1012,182 +1165,117 @@ def _sync_archive_to_archive(
             if options.min_size is not None and src_info.size < options.min_size:
                 continue
 
-            # Compute destination path
-            if src_prefix:
-                rel_path = src_info.path[len(src_prefix) :].lstrip('/')
-            else:
-                rel_path = src_info.path
-
             dest_path = osp.join(prefix, rel_path) if prefix else rel_path
             dest_path = dest_path.lstrip('/')
+            if record is not None:
+                record.deliver(dest_path)
 
-            # Check if needs sync
-            exists = dest_bc is not None and dest_path in dest_bc
+            _sync_one_archive_entry(src_bc, src_info, dest_path, dest_bc, options)
 
-            # --existing: only update files that already exist
-            if options.existing and not exists:
+
+def _sync_one_archive_entry(src_bc, src_info, dest_path: str, dest_bc, options: RsyncOptions):
+    """Copy one already-mapped source entry into the destination archive."""
+    from ..core.types import BarecatFileInfo
+
+    # Check if needs sync
+    exists = dest_bc is not None and dest_path in dest_bc
+
+    # --existing: only update files that already exist
+    if options.existing and not exists:
+        if options.verbose:
+            print(f'skip (new): {dest_path}')
+        return
+
+    # --ignore-existing: skip files that exist
+    if options.ignore_existing and exists:
+        if options.verbose:
+            print(f'skip (exists): {dest_path}')
+        return
+
+    if exists:
+        dest_info = _lookup_file(dest_bc, dest_path)
+
+        if options.update:
+            # Skip if dest is newer
+            if (
+                dest_info.mtime_ns
+                and src_info.mtime_ns
+                and dest_info.mtime_ns >= src_info.mtime_ns
+            ):
                 if options.verbose:
-                    print(f'skip (new): {dest_path}')
-                continue
+                    print(f'skip (newer): {dest_path}')
+                return
 
-            # --ignore-existing: skip files that exist
-            if options.ignore_existing and exists:
+        if options.checksum and src_info.crc32c is not None and dest_info.crc32c is not None:
+            # Compare by checksum (both sides have crc32c in database).
+            # A NULL crc32c means "unknown", not "equal to the other unknown":
+            # two such entries fall through to the size/mtime comparison below.
+            if src_info.crc32c == dest_info.crc32c:
                 if options.verbose:
-                    print(f'skip (exists): {dest_path}')
-                continue
+                    print(f'skip (checksum match): {dest_path}')
+                return
+        else:
+            if options.size_only:
+                if src_info.size == dest_info.size:
+                    if options.verbose:
+                        print(f'skip (same size): {dest_path}')
+                    return
+            else:
+                # Compare size and mtime
+                if src_info.size == dest_info.size and src_info.mtime_ns == dest_info.mtime_ns:
+                    if options.verbose:
+                        print(f'skip (unchanged): {dest_path}')
+                    return
 
-            if exists:
-                dest_info = _lookup_file(dest_bc, dest_path)
+    if options.dry_run:
+        print(f"would {'update' if exists else 'copy'}: {src_info.path} -> {dest_path}")
+        return
 
-                if options.update:
-                    # Skip if dest is newer
-                    if (
-                        dest_info.mtime_ns
-                        and src_info.mtime_ns
-                        and dest_info.mtime_ns >= src_info.mtime_ns
-                    ):
-                        if options.verbose:
-                            print(f'skip (newer): {dest_path}')
-                        continue
+    if options.verbose or options.progress:
+        print(f"{'update' if exists else 'copy'}: {dest_path}")
 
-                if options.checksum:
-                    # Compare by checksum (both sides have crc32c in database)
-                    if src_info.crc32c == dest_info.crc32c:
-                        if options.verbose:
-                            print(f'skip (checksum match): {dest_path}')
-                        continue
-                else:
-                    if options.size_only:
-                        if src_info.size == dest_info.size:
-                            if options.verbose:
-                                print(f'skip (same size): {dest_path}')
-                            continue
-                    else:
-                        # Compare size and mtime
-                        if (
-                            src_info.size == dest_info.size
-                            and src_info.mtime_ns == dest_info.mtime_ns
-                        ):
-                            if options.verbose:
-                                print(f'skip (unchanged): {dest_path}')
-                            continue
+    # Create file info with metadata from source
+    finfo = BarecatFileInfo(
+        path=dest_path,
+        size=src_info.size,
+        mode=src_info.mode,
+        uid=src_info.uid,
+        gid=src_info.gid,
+        mtime_ns=src_info.mtime_ns if options.times else time.time_ns(),
+    )
 
-            if options.dry_run:
-                print(f"would {'update' if exists else 'copy'}: {src_info.path} -> {dest_path}")
-                continue
-
-            if options.verbose or options.progress:
-                print(f"{'update' if exists else 'copy'}: {dest_path}")
-
-            # Create file info with metadata from source
-            from ..core.types import BarecatFileInfo
-
-            finfo = BarecatFileInfo(
-                path=dest_path,
-                size=src_info.size,
-                mode=src_info.mode,
-                uid=src_info.uid,
-                gid=src_info.gid,
-                mtime_ns=src_info.mtime_ns if options.times else time.time_ns(),
-            )
-
-            with src_bc.open(src_info.path, 'rb') as f:
-                if exists:
-                    dest_bc.update_file(dest_path, finfo, fileobj=f)
-                else:
-                    dest_bc.add(finfo, fileobj=f)
+    with src_bc.open(src_info.path, 'rb') as f:
+        if exists:
+            dest_bc.update_file(dest_path, finfo, fileobj=f)
+        else:
+            dest_bc.add(finfo, fileobj=f)
 
 
 def _delete_extraneous_in_archive(
-    sources: list[ParsedPath],
+    record: '_TransferRecord',
     dest_bc,  # Barecat (destination is always local/writable for now)
-    dest_prefix: str,
     options: RsyncOptions,
 ):
-    """Delete files in dest archive not present in sources."""
-    # Build set of expected files
-    expected = set()
+    """Delete destination entries the transfer did not account for (audit item 1).
 
-    for src in sources:
-        if src.path_type == PathType.LOCAL:
-            # Local filesystem source
-            src_path = src.filesystem_path
-            if src.contents_mode:
-                prefix = dest_prefix
-            else:
-                prefix = osp.join(dest_prefix, osp.basename(src_path))
+    Scope comes from the transfer, not from a second walk of the sources: only
+    subtrees that a directory source mapped onto are considered, and only paths
+    the sync pass never delivered are removed. Excluded destination entries are
+    left alone unless ``--delete-excluded``, as in rsync.
+    """
+    if not record.scopes:
+        return
 
-            for root, dirs, files in os.walk(src_path):
-                rel_root = osp.relpath(root, src_path)
-                if rel_root == '.':
-                    rel_root = ''
-                for fname in files:
-                    rel_path = osp.join(rel_root, fname) if rel_root else fname
-                    archive_path = osp.join(prefix, rel_path) if prefix else rel_path
-                    expected.add(archive_path.lstrip('/'))
-
-        elif src.is_tar_zip:
-            # Tar/zip source
-            from ..formats.archive_formats import iter_archive_nocontent
-
-            src_path = src.filesystem_path
-            src_inner = src.inner_path
-
-            if src.contents_mode:
-                prefix = dest_prefix
-            else:
-                if src_inner:
-                    basename = osp.basename(src_inner)
-                else:
-                    basename = osp.basename(src_path)
-                    for ext in TAR_EXTENSIONS + ZIP_EXTENSIONS:
-                        if basename.lower().endswith(ext):
-                            basename = basename[: -len(ext)]
-                            break
-                prefix = osp.join(dest_prefix, basename) if dest_prefix else basename
-
-            for info in iter_archive_nocontent(src_path):
-                if not info.isfile():
-                    continue
-                # Filter by inner path if specified
-                if src_inner:
-                    if not (info.path == src_inner or info.path.startswith(src_inner + '/')):
-                        continue
-                    rel_path = info.path[len(src_inner) :].lstrip('/')
-                else:
-                    rel_path = info.path
-                archive_path = osp.join(prefix, rel_path) if prefix else rel_path
-                expected.add(archive_path.lstrip('/'))
-
-        elif src.is_archive:
-            # Archive source (local or remote)
-            src_prefix = src.inner_path
-            if src.contents_mode:
-                prefix = dest_prefix
-            else:
-                if src_prefix:
-                    basename = osp.basename(src_prefix)
-                else:
-                    basename = src.archive_basename
-                prefix = osp.join(dest_prefix, basename) if dest_prefix else basename
-
-            with _open_archive(src, readonly=True) as src_bc:
-                pattern = f'{src_prefix}/**' if src_prefix else '**'
-                for info in _get_file_infos(src_bc, pattern):
-                    if not info.isfile():
-                        continue
-                    if src_prefix:
-                        rel_path = info.path[len(src_prefix) :].lstrip('/')
-                    else:
-                        rel_path = info.path
-                    archive_path = osp.join(prefix, rel_path) if prefix else rel_path
-                    expected.add(archive_path.lstrip('/'))
-
-    # Find and delete extraneous
-    pattern = f'{dest_prefix}/**' if dest_prefix else '**'
-    existing = set(info.path for info in _get_file_infos(dest_bc, pattern) if info.isfile())
-
-    for path in existing - expected:
+    for info in _get_file_infos(dest_bc, '**'):
+        if not info.isfile():
+            continue
+        path = info.path
+        if not record.is_extraneous(path):
+            continue
+        if not options.delete_excluded and _is_excluded(path, options):
+            if options.verbose:
+                print(f'protect (excluded): {path}')
+            continue
         if options.dry_run:
             print(f'would delete: {path}')
         else:
@@ -1196,87 +1284,56 @@ def _delete_extraneous_in_archive(
             del dest_bc[path]
 
 
-def _delete_extraneous_local(sources: list[ParsedPath], dest_dir: str, options: RsyncOptions):
-    """Delete local files not present in archive sources (local, remote, or tar/zip)."""
-    expected = set()
+def _delete_extraneous_local(record: '_TransferRecord', dest_dir: str, options: RsyncOptions):
+    """Delete local files the transfer did not account for (audit item 1).
 
-    for src in sources:
-        if src.is_tar_zip:
-            # Tar/zip source
-            from ..formats.archive_formats import iter_archive_nocontent
+    Same scoping rule as the archive direction, and the stakes are higher here:
+    this removes real files from disk with ``os.remove``.
+    """
+    if not record.scopes:
+        return
 
-            src_path = src.filesystem_path
-            src_inner = src.inner_path
-
-            if src.contents_mode:
-                out_dir = dest_dir
-            else:
-                if src_inner:
-                    basename = osp.basename(src_inner)
-                else:
-                    basename = osp.basename(src_path)
-                    for ext in TAR_EXTENSIONS + ZIP_EXTENSIONS:
-                        if basename.lower().endswith(ext):
-                            basename = basename[: -len(ext)]
-                            break
-                out_dir = osp.join(dest_dir, basename)
-
-            for info in iter_archive_nocontent(src_path):
-                if not info.isfile():
-                    continue
-                # Filter by inner path if specified
-                if src_inner:
-                    if not (info.path == src_inner or info.path.startswith(src_inner + '/')):
-                        continue
-                    rel_path = info.path[len(src_inner) :].lstrip('/')
-                else:
-                    rel_path = info.path
-                expected.add(osp.join(out_dir, rel_path))
-
-        elif src.is_archive:
-            with _open_archive(src, readonly=True) as src_bc:
-                src_prefix = src.inner_path
-
-                if src.contents_mode:
-                    out_dir = dest_dir
-                else:
-                    if src_prefix:
-                        basename = osp.basename(src_prefix)
-                    else:
-                        basename = src.archive_basename
-                    out_dir = osp.join(dest_dir, basename)
-
-                pattern = f'{src_prefix}/**' if src_prefix else '**'
-                for info in _get_file_infos(src_bc, pattern):
-                    if not info.isfile():
-                        continue
-                    archive_path = info.path
-                    if src_prefix:
-                        rel_path = archive_path[len(src_prefix) :].lstrip('/')
-                    else:
-                        rel_path = archive_path
-                    expected.add(osp.join(out_dir, rel_path))
-
-    # Find and delete extraneous local files
     for root, dirs, files in os.walk(dest_dir):
         for fname in files:
             local_path = osp.join(root, fname)
-            if local_path not in expected:
-                if options.dry_run:
-                    print(f'would delete: {local_path}')
-                else:
-                    if options.verbose:
-                        print(f'delete: {local_path}')
-                    os.remove(local_path)
+            if not record.is_extraneous(local_path):
+                continue
+            rel_path = osp.relpath(local_path, dest_dir)
+            if not options.delete_excluded and _is_excluded(rel_path, options):
+                if options.verbose:
+                    print(f'protect (excluded): {local_path}')
+                continue
+            if options.dry_run:
+                print(f'would delete: {local_path}')
+            else:
+                if options.verbose:
+                    print(f'delete: {local_path}')
+                os.remove(local_path)
 
 
-def _is_excluded(name: str, options: RsyncOptions) -> bool:
-    """Check if file/dir should be excluded."""
-    for pattern in options.exclude:
-        if fnmatch.fnmatch(name, pattern):
-            # Check if explicitly included
-            for inc in options.include:
-                if fnmatch.fnmatch(name, inc):
-                    return False
-            return True
-    return False
+def _is_excluded(rel_path: str, options: RsyncOptions) -> bool:
+    """Whether a transfer-relative path is filtered out by the include/exclude rules.
+
+    Matching follows rsync's own rules (see :mod:`barecat.util.pathfilter`): the
+    rules are ordered and the first one that matches decides, patterns are tested
+    against the whole relative path, and an unanchored pattern matches at any
+    depth.
+    """
+    rules = options.filter_rules
+    if not rules:
+        return False
+    return not first_match_wins(rel_path, rules)
+
+
+def _prunes_directory(rel_dir: str, options: RsyncOptions) -> bool:
+    """Whether a directory subtree can be skipped without walking into it.
+
+    Only excludes prune. An include rule further down the list may still select
+    files inside a directory whose own name matches nothing, so as soon as any
+    include rule is present the walk descends and filtering happens per file —
+    the same rule `barecat create -i` follows (audit items 21 and 55).
+    """
+    rules = options.filter_rules
+    if not rules or any(sign == '+' for sign, _ in rules):
+        return False
+    return not first_match_wins(rel_dir, rules)
