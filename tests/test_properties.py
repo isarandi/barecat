@@ -308,9 +308,6 @@ def test_codec_roundtrip_compound_json_gz():
     assert _roundtrip('data.json.gz', value) == value
 
 
-@pytest.mark.xfail(
-    strict=True, reason='audit item 49: unknown inner extension (.txt) breaks compound codecs'
-)
 def test_codec_roundtrip_compound_unknown_inner():
     """.txt.gz should gzip the raw bytes (identity fallback for the inner extension)."""
     assert _roundtrip('notes.txt.gz', b'hello world') == b'hello world'
@@ -364,3 +361,11 @@ def test_codec_roundtrip_exr_many_channels():
     value = rng.random(size=(4, 6, 12), dtype=np.float32)
     result = _roundtrip('data.exr', value)
     np.testing.assert_array_equal(result, value)
+
+
+def test_codec_compound_outermost_extension_still_raises():
+    """Item 49's fallback is for inner extensions only; DecodedView still fails loudly."""
+    with pytest.raises(ValueError):
+        _roundtrip('thing.unknownext', b'x')
+
+

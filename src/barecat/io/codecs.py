@@ -475,11 +475,17 @@ class DecodedView(MutableMapping[str, Any]):
         """Remove all registered codecs."""
         self.codecs.clear()
 
-    def _encode(self, path: str, data: Any) -> bytes:
+    def _encode(self, path: str, data: Any, is_inner: bool = False) -> bytes:
         noext, ext = osp.splitext(path)
         ext = ext.lower()
 
         if ext not in self.codecs:
+            if is_inner:
+                # Compound names like '.txt.gz' or '.tar.gz' have an inner extension
+                # with no codec of its own; pass those bytes through rather than
+                # refuse the whole name. The outermost extension still has to be
+                # known -- that is what makes DecodedView fail loudly.
+                return data
             raise ValueError(
                 f"No codec registered for '{ext}'. Use the store directly for raw bytes."
             )
@@ -487,15 +493,18 @@ class DecodedView(MutableMapping[str, Any]):
         encoder, decoder, nonfinal = self.codecs[ext]
 
         if nonfinal:
-            data = self._encode(noext, data)
+            data = self._encode(noext, data, is_inner=True)
 
         return encoder(data)
 
-    def _decode(self, path: str, data: bytes) -> Any:
+    def _decode(self, path: str, data: bytes, is_inner: bool = False) -> Any:
         noext, ext = osp.splitext(path)
         ext = ext.lower()
 
         if ext not in self.codecs:
+            if is_inner:
+                # See _encode: an unknown inner extension yields the raw bytes.
+                return data
             raise ValueError(
                 f"No codec registered for '{ext}'. Use the store directly for raw bytes."
             )
@@ -504,7 +513,7 @@ class DecodedView(MutableMapping[str, Any]):
         data = decoder(data)
 
         if nonfinal:
-            data = self._decode(noext, data)
+            data = self._decode(noext, data, is_inner=True)
 
         return data
 
