@@ -9,7 +9,7 @@ import tempfile
 from typing import TYPE_CHECKING, Callable, Optional, Union
 
 from ..exceptions import FileExistsBarecatError, FileNotFoundBarecatError
-from ..io.copyfile import accumulate_crc32c, write_zeroes
+from ..io.copyfile import accumulate_crc32c, write_zeroes, _fallocate, FALLOC_FL_ZERO_RANGE
 
 if TYPE_CHECKING:
     from ..core.barecat import Barecat
@@ -214,8 +214,7 @@ class BarecatReadOnlyFileObject(BarecatFileObject):
         else:
             size = min(size, remaining)
 
-        self.shard_file.seek(self.position)
-        data = self.shard_file.read(size)
+        data = os.pread(self.shard_file.fileno(), size, self.position)
         self.position += len(data)
         return data
 
@@ -235,8 +234,7 @@ class BarecatReadOnlyFileObject(BarecatFileObject):
             return 0
 
         size = min(len(buffer), remaining)
-        self.shard_file.seek(self.position)
-        num_read = self.shard_file.readinto(buffer[:size])
+        num_read = os.preadv(self.shard_file.fileno(), [memoryview(buffer)[:size]], self.position)
         self.position += num_read
         return num_read
 
@@ -297,8 +295,10 @@ class BarecatReadOnlyFileObject(BarecatFileObject):
         else:
             size = min(size, remaining)
 
-        self.shard_file.seek(self.position)
-        data = self.shard_file.readline(size)
+        data = os.pread(self.shard_file.fileno(), size, self.position)
+        newline_pos = data.find(b'\n')
+        if newline_pos != -1:
+            data = data[: newline_pos + 1]
 
         self.position += len(data)
         return data
@@ -401,8 +401,8 @@ class BarecatReadWriteFileObject(BarecatFileObject):
         shard_read_size = min(size, max(0, self.original_size - self.position))
         shard_data = b''
         if shard_read_size > 0:
-            self.shard_file.seek(self.offset + self.position)
-            shard_data = self.shard_file.read(shard_read_size)
+            fd = self.shard_file.fileno()
+            shard_data = os.pread(fd, shard_read_size, self.offset + self.position)
             if len(shard_data) < shard_read_size:
                 raise EOFError('Unexpected end of shard file during read')
 
@@ -439,8 +439,8 @@ class BarecatReadWriteFileObject(BarecatFileObject):
         # Write to shard (within original bounds)
         if self.position < self.original_size:
             shard_write_size = min(len(data), self.original_size - self.position)
-            self.shard_file.seek(self.offset + self.position)
-            n = self.shard_file.write(data[:shard_write_size])
+            fd = self.shard_file.fileno()
+            n = os.pwrite(fd, data[:shard_write_size], self.offset + self.position)
             if n < shard_write_size:
                 raise EOFError('Unexpected end of shard file during write')
 
@@ -490,8 +490,13 @@ class BarecatReadWriteFileObject(BarecatFileObject):
 
         new_size_in_shard = min(size, self.original_size)
         if self.size < new_size_in_shard:
-            self.shard_file.seek(self.offset + self.size)
-            write_zeroes(self.shard_file, new_size_in_shard - self.size)
+            fd = self.shard_file.fileno()
+            zero_offset = self.offset + self.size
+            zero_length = new_size_in_shard - self.size
+            try:
+                _fallocate(fd, FALLOC_FL_ZERO_RANGE, zero_offset, zero_length)
+            except OSError:
+                os.pwrite(fd, bytearray(zero_length), zero_offset)
 
         if size > self.original_size:
             self._ensure_spillover()

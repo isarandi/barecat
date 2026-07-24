@@ -1,7 +1,6 @@
 import glob
 import os
 import os.path as osp
-import shutil
 from contextlib import AbstractContextManager
 
 import crc32c as crc32c_lib
@@ -9,8 +8,9 @@ from ..io.fileobj import BarecatReadOnlyFileObject, BarecatReadWriteFileObject
 from ..exceptions import FileTooLargeBarecatError
 from ..util.misc import raise_if_readonly
 from ..io.open import open_, reopen
-from ..io.copyfile import copy, copy_crc32c
-from ..util.threading import ThreadLocalStorage
+from ..io.copyfile import copy
+
+COPY_BUFSIZE = 64 * 1024
 
 
 class Sharder(AbstractContextManager):
@@ -20,16 +20,12 @@ class Sharder(AbstractContextManager):
         shard_size_limit=None,
         readonly=True,
         append_only=False,
-        threadsafe=False,
         allow_writing_symlinked_shard=False,
     ):
-        import os
-
         path = os.fspath(path)
         self.path = path
         self.readonly = readonly
         self.append_only = append_only
-        self.threadsafe = threadsafe
         self.allow_writing_symlinked_shard = allow_writing_symlinked_shard
 
         self.shard_size_limit = shard_size_limit
@@ -47,21 +43,19 @@ class Sharder(AbstractContextManager):
             self.shard_mode_last_existing = 'r+b'
             self.shard_mode_new = 'x+b'
 
-        self._shard_files_storage = ThreadLocalStorage(threadsafe)
+        self._shard_files = self.open_shard_files()
 
     # READING
     def readinto_from_address(self, shard, offset, buffer, expected_crc32c=None):
-        shard_file = self.shard_files[shard]
-        shard_file.seek(offset)
-        num_read = shard_file.readinto(buffer)
+        fd = self.shard_files[shard].fileno()
+        num_read = os.preadv(fd, [memoryview(buffer)], offset)
         if expected_crc32c is not None and crc32c_lib.crc32c(buffer[:num_read]) != expected_crc32c:
             raise ValueError('CRC32C mismatch')
         return num_read
 
     def read_from_address(self, shard, offset, size, expected_crc32c=None):
-        shard_file = self.shard_files[shard]
-        shard_file.seek(offset)
-        data = shard_file.read(size)
+        fd = self.shard_files[shard].fileno()
+        data = os.pread(fd, size, offset)
         if expected_crc32c is not None and crc32c_lib.crc32c(data) != expected_crc32c:
             raise ValueError('CRC32C mismatch')
         return data
@@ -94,11 +88,9 @@ class Sharder(AbstractContextManager):
         offset,
         size,
         raise_if_cannot_fit=False,
-        bufsize=shutil.COPY_BUFSIZE,
+        bufsize=COPY_BUFSIZE,
     ):
         with open(filesys_path, 'rb') as in_file:
-            # os.posix_fadvise(in_file.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
-
             result = self.add(
                 shard,
                 offset,
@@ -107,10 +99,7 @@ class Sharder(AbstractContextManager):
                 raise_if_cannot_fit=raise_if_cannot_fit,
                 bufsize=bufsize,
             )
-            try:
-                os.posix_fadvise(in_file.fileno(), 0, size, os.POSIX_FADV_DONTNEED)
-            except (OSError, AttributeError):
-                pass  # Not available on Windows
+            os.posix_fadvise(in_file.fileno(), 0, size, os.POSIX_FADV_DONTNEED)
             return result
 
     @raise_if_readonly
@@ -137,20 +126,16 @@ class Sharder(AbstractContextManager):
 
     @raise_if_readonly
     def start_new_shard(self):
-        self.reopen_current_shard(self.shard_mode_nonlast)
         new_shard_file = open_(self.get_shard_path(self.num_shards), self.shard_mode_new)
         self.shard_files.append(new_shard_file)
         return new_shard_file
 
     @raise_if_readonly
     def start_new_shard_and_transfer_last_file(self, offset, size):
-        old_shard_file = self.reopen_current_shard('r+b')
+        old_shard_file = self.shard_files[-1]
         new_shard_file = open_(self.get_shard_path(self.num_shards), self.shard_mode_new)
-        old_shard_file.seek(offset)
-        copy(old_shard_file, new_shard_file, size)
-        old_shard_file.truncate(offset)
-        self.reopen_current_shard(self.shard_mode_nonlast)
-
+        copy(old_shard_file, new_shard_file, size, src_offset=offset)
+        os.ftruncate(old_shard_file.fileno(), offset)
         self.shard_files.append(new_shard_file)
         return new_shard_file
 
@@ -162,7 +147,7 @@ class Sharder(AbstractContextManager):
         size=None,
         data=None,
         fileobj=None,
-        bufsize=shutil.COPY_BUFSIZE,
+        bufsize=COPY_BUFSIZE,
         raise_if_cannot_fit=False,
     ):
         if data is None and fileobj is None:
@@ -186,7 +171,6 @@ class Sharder(AbstractContextManager):
         else:
             self.ensure_open_shards(shard)
             shard_file = self.shard_files[shard]
-            shard_file.seek(offset)
 
         offset_real = offset
         shard_real = shard
@@ -203,13 +187,24 @@ class Sharder(AbstractContextManager):
         if data is not None:
             if not isinstance(data, (bytes, bytearray, memoryview)):
                 raise ValueError(
-                    'Data must be bytes, bytearray or memoryview. Are you using auto_codec/register_codec wrong?'
+                    'Data must be bytes, bytearray or memoryview. '
+                    'Are you using auto_codec/register_codec wrong?'
                 )
-            shard_file.write(data)
+            os.pwrite(shard_file.fileno(), data, offset_real)
             crc32c = crc32c_lib.crc32c(data)
             size_real = len(data)
         else:
-            size_real, crc32c = copy_crc32c(fileobj, shard_file, size, bufsize=bufsize)
+            fd = shard_file.fileno()
+            crc32c = 0
+            size_real = 0
+            while size is None or size_real < size:
+                to_read = bufsize if size is None else min(bufsize, size - size_real)
+                chunk = fileobj.read(to_read)
+                if not chunk:
+                    break
+                crc32c = crc32c_lib.crc32c(chunk, crc32c)
+                os.pwrite(fd, chunk, offset_real + size_real)
+                size_real += len(chunk)
             if size is not None and size != size_real:
                 raise ValueError(f'Size mismatch! Expected {size}, got only {size_real}')
 
@@ -234,9 +229,7 @@ class Sharder(AbstractContextManager):
 
         try:
             os.posix_fallocate(shard_file.fileno(), offset, size)
-        except (OSError, AttributeError):
-            # OSError: fallocate not supported on this filesystem
-            # AttributeError: not available on Windows
+        except OSError:
             shard_file.truncate(offset + size)
 
         return self.num_shards - 1, offset
@@ -289,7 +282,7 @@ class Sharder(AbstractContextManager):
         self.reopen_current_shard(self.shard_mode_last_existing)
 
     def close(self):
-        for f in self.shard_files:
+        for f in self._shard_files:
             f.close()
 
     def raise_if_readonly(self, message):
@@ -315,10 +308,9 @@ class Sharder(AbstractContextManager):
     def total_physical_size_stat(self):
         return sum(osp.getsize(f.name) for f in self.shard_files)
 
-    # THREADSAFE
     @property
     def shard_files(self):
-        return self._shard_files_storage.get(self.open_shard_files)
+        return self._shard_files
 
     @property
     def last_shard_file(self):

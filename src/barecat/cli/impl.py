@@ -416,7 +416,6 @@ def create_with_workers(
             shard_size_limit=shard_size_limit,
             readonly=False,
             append_only=False,
-            threadsafe=True,
             allow_writing_symlinked_shard=False,
         ) as sharder,
         ConsumedThreadPool(

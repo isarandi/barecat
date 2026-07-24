@@ -2,7 +2,7 @@ import io
 import logging
 import os
 import os.path as osp
-import shutil
+from ..io.copyfile import _DEFAULT_BUFSIZE
 import stat
 import warnings
 from collections.abc import Callable, Iterator, MutableMapping
@@ -130,7 +130,6 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             shard_size_limit=self.shard_size_limit,
             append_only=append_only,
             readonly=readonly,
-            threadsafe=threadsafe,
             allow_writing_symlinked_shard=allow_writing_symlinked_shard,
         )
 
@@ -656,7 +655,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         *,
         data: Optional[bytes] = None,
         fileobj=None,
-        bufsize: int = shutil.COPY_BUFSIZE,
+        bufsize: int = _DEFAULT_BUFSIZE,
         dir_exist_ok: bool = False,
         file_exist_ok: bool = False,
     ):
@@ -718,7 +717,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         data: Optional[bytes] = None,
         fileobj=None,
         size: Optional[int] = None,
-        bufsize: int = shutil.COPY_BUFSIZE,
+        bufsize: int = _DEFAULT_BUFSIZE,
     ):
         """Update an existing file's data and/or metadata, reusing space if new data fits.
 

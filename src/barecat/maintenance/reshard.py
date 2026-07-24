@@ -145,8 +145,7 @@ def reshard(bc: Barecat, target_shard_size_limit: int):
         bc.shard_size_limit = target_shard_size_limit
 
         # Reopen sharder with new shards
-        bc.sharder._shard_files_storage._local.value = None
-        bc.sharder._shard_files_storage._local.value = bc.sharder.open_shard_files()
+        bc.sharder._shard_files = bc.sharder.open_shard_files()
 
     finally:
         if temp_sharder is not None:
