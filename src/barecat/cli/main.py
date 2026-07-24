@@ -133,7 +133,9 @@ def main():
         action='append',
         default=[],
         metavar='PATTERN',
-        help='Only include files matching glob pattern, use **/ for recursive (repeatable)',
+        help='Only include files matching glob pattern, use **/ for recursive '
+        '(repeatable). Selects files only; the whole tree is still walked, so a '
+        'narrow include over a deep tree is not faster than no filter',
     )
     p.add_argument('-j', '--workers', type=int, default=None, help='Number of worker threads')
     p.add_argument('-f', '--force', action='store_true', help='Overwrite existing archive')
@@ -191,7 +193,9 @@ def main():
         action='append',
         default=[],
         metavar='PATTERN',
-        help='Only include files matching glob pattern, use **/ for recursive (repeatable)',
+        help='Only include files matching glob pattern, use **/ for recursive '
+        '(repeatable). Selects files only; the whole tree is still walked, so a '
+        'narrow include over a deep tree is not faster than no filter',
     )
     p.add_argument('-j', '--workers', type=int, default=None, help='Number of worker threads')
     p.add_argument(
@@ -998,10 +1002,14 @@ def _handle_add(args, overwrite=False, exist_ok=True):
                 return True
         return False
 
+    def is_excluded(path):
+        """Check whether a path is pruned by an --exclude pattern."""
+        return bool(args.exclude) and matches_patterns(path, args.exclude)
+
     def should_include(path):
         """Check if path should be included based on include/exclude patterns."""
         # If exclude patterns given and path matches, exclude it
-        if args.exclude and matches_patterns(path, args.exclude):
+        if is_excluded(path):
             return False
         # If include patterns given, path must match one of them
         if args.include and not matches_patterns(path, args.include):
@@ -1022,9 +1030,13 @@ def _handle_add(args, overwrite=False, exist_ok=True):
                         yield root, root
 
                     for dirpath, subdirnames, filenames in os.walk(root):
-                        # Filter subdirs in-place to prevent descending into excluded dirs
+                        # Only --exclude prunes descent: excluding a subtree is what the
+                        # option means. An --include pattern selects files, so pruning by
+                        # it would skip directories whose descendants still match (a
+                        # file-oriented pattern like '**/*.jpg' matches no directory at
+                        # all, which used to prune everything and store nothing).
                         subdirnames[:] = [
-                            d for d in subdirnames if should_include(osp.join(dirpath, d))
+                            d for d in subdirnames if not is_excluded(osp.join(dirpath, d))
                         ]
 
                         for entryname in itertools.chain(filenames, subdirnames):

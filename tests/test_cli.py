@@ -947,6 +947,48 @@ def test_cli_ls_glob_pattern(tmp_path):
     assert 'root.txt' not in lines
 
 
+def test_create_include_filters_files_without_pruning_descent(tmp_path):
+    """--include selects files; it must not stop os.walk from descending (audit item 21)."""
+    (tmp_path / 'src/d/sub').mkdir(parents=True)
+    (tmp_path / 'src/d/sub/c.jpg').write_bytes(b'jpg')
+    (tmp_path / 'src/d/sub/c.txt').write_bytes(b'txt')
+    (tmp_path / 'src/top.jpg').write_bytes(b'top')
+
+    archive_path = tmp_path / 'inc.barecat'
+    result = subprocess.run(
+        ['barecat', 'create', str(archive_path), 'src', '-i', '**/*.jpg'],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    with barecat.Barecat(str(archive_path)) as bc:
+        assert sorted(bc.files()) == ['src/d/sub/c.jpg', 'src/top.jpg']
+
+
+def test_create_exclude_still_prunes_subtree(tmp_path):
+    """--exclude on a directory keeps pruning its whole subtree (audit item 21)."""
+    (tmp_path / 'src/keep').mkdir(parents=True)
+    (tmp_path / 'src/skip/deep').mkdir(parents=True)
+    (tmp_path / 'src/keep/a.txt').write_bytes(b'a')
+    (tmp_path / 'src/skip/b.txt').write_bytes(b'b')
+    (tmp_path / 'src/skip/deep/c.txt').write_bytes(b'c')
+
+    archive_path = tmp_path / 'exc.barecat'
+    result = subprocess.run(
+        ['barecat', 'create', str(archive_path), 'src', '--exclude', '**/skip'],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    with barecat.Barecat(str(archive_path)) as bc:
+        stored = sorted(bc.files())
+    assert stored == ['src/keep/a.txt']
+
+
 def test_legacy_create_appends_to_existing_archive(tmp_path):
     """Legacy barecat-create honors exist_ok again instead of misreading workers (item 24)."""
     (tmp_path / 'a.txt').write_bytes(b'a')
