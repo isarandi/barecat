@@ -30,11 +30,13 @@ from ..util.progbar import progressbar
 def create(
     filesys_and_store_path_pairs,
     target_path,
-    shard_size_limit,
+    *,
+    shard_size_limit=None,
     overwrite=False,
     exist_ok=True,
-    workers=8,
+    workers: int | None = 8,
 ):
+    """Create or extend an archive. ``workers=None`` means single-threaded."""
     if workers is None:
         create_without_workers(
             filesys_and_store_path_pairs, target_path, shard_size_limit, overwrite, exist_ok
@@ -341,7 +343,13 @@ def create_from_stdin_paths(
     target_path, shard_size_limit, zero_terminated=False, overwrite=False, workers=None
 ):
     iterator = generate_from_stdin(zero_terminated)
-    create(iterator, target_path, shard_size_limit, overwrite, workers)
+    create(
+        iterator,
+        target_path,
+        shard_size_limit=shard_size_limit,
+        overwrite=overwrite,
+        workers=workers,
+    )
 
 
 def create_recursive(
@@ -355,7 +363,13 @@ def create_recursive(
         )
 
     iterator = progressbar(iterator, desc='Packing files', unit=' files')
-    create(iterator, target_path, shard_size_limit, overwrite, workers)
+    create(
+        iterator,
+        target_path,
+        shard_size_limit=shard_size_limit,
+        overwrite=overwrite,
+        workers=workers,
+    )
 
 
 def generate_from_stdin(zero_terminated=False):

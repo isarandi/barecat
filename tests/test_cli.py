@@ -945,3 +945,23 @@ def test_cli_ls_glob_pattern(tmp_path):
     assert 'keep/sub/b.txt' in lines
     assert 'drop/c.txt' not in lines
     assert 'root.txt' not in lines
+
+
+def test_legacy_create_appends_to_existing_archive(tmp_path):
+    """Legacy barecat-create honors exist_ok again instead of misreading workers (item 24)."""
+    (tmp_path / 'a.txt').write_bytes(b'a')
+    (tmp_path / 'b.txt').write_bytes(b'b')
+    archive_path = tmp_path / 'legacy.barecat'
+
+    for name in ('a.txt', 'b.txt'):
+        result = subprocess.run(
+            ['barecat-create', f'--file={archive_path}'],
+            input=f'{name}\n',
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    with barecat.Barecat(str(archive_path)) as bc:
+        assert sorted(bc.files()) == ['a.txt', 'b.txt']
