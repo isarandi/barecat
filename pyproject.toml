@@ -11,7 +11,7 @@ name = "barecat"
 dynamic = ["version"]
 description = "Scalable archive format for storing millions of small files with random access and SQLite indexing."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 
 authors = [
@@ -49,7 +49,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
