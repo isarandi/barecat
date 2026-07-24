@@ -20,6 +20,7 @@ from ..util.glob_to_regex import (
     expand_doublestar,
     pattern_to_sql_exclude,
 )
+from ..util.pathfilter import filter_pattern_to_sqlite_globs, first_match_wins
 from ..core.paths import normalize_path
 
 
@@ -478,11 +479,6 @@ class GlobHelper:
         # GLOB inc1_over OR (NOT exc1_sql AND (GLOB inc2_over OR (... OR 1)))
         sql_expr, params = self._build_filter_sql(rules, default_include)
 
-        # Precompute regex patterns for Python filtering
-        rule_regexes = [
-            (sign, glob_to_regex(p, recursive='**' in p, include_hidden=True)) for sign, p in rules
-        ]
-
         fquery = f"""
             SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns
             FROM files WHERE {sql_expr}
@@ -490,7 +486,7 @@ class GlobHelper:
         for info in self._index.fetch_iter(
             fquery, params, bufsize=bufsize, rowcls=BarecatFileInfo
         ):
-            if self._first_match_wins(info.path, rule_regexes, default_include):
+            if first_match_wins(info.path, rules, default_include):
                 yield info
 
         if only_files:
@@ -502,7 +498,7 @@ class GlobHelper:
             FROM dirs WHERE {sql_expr}
             """
         for info in self._index.fetch_iter(dquery, params, bufsize=bufsize, rowcls=BarecatDirInfo):
-            if self._first_match_wins(info.path, rule_regexes, default_include):
+            if first_match_wins(info.path, rules, default_include):
                 yield info
 
     def _build_filter_sql(
@@ -535,9 +531,7 @@ class GlobHelper:
         for sign, pattern in reversed(rules):
             if sign == '+':
                 # Include: overmatch with GLOB (SQLite * matches /, that's OK)
-                sqlite_patterns = expand_doublestar(
-                    glob_to_sqlite(pattern), recursive='**' in pattern
-                )
+                sqlite_patterns = filter_pattern_to_sqlite_globs(pattern)
                 if len(sqlite_patterns) == 1:
                     pname = add_param(sqlite_patterns[0])
                     inc_expr = f'path GLOB :{pname}'
@@ -575,10 +569,3 @@ class GlobHelper:
 
         return expr, params
 
-    @staticmethod
-    def _first_match_wins(path: str, rule_regexes: list[tuple[str, str]], default: bool) -> bool:
-        """Apply rsync-style first-match-wins logic."""
-        for sign, regex in rule_regexes:
-            if re.match(regex, path):
-                return sign == '+'
-        return default

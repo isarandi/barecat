@@ -527,20 +527,16 @@ def _should_include(path, pattern, filter_rules):
     """Check if path should be included based on pattern or filter rules."""
     import re
     from ..util.glob_to_regex import glob_to_regex
+    from ..util.pathfilter import first_match_wins
 
     if pattern is not None:
+        # --pattern is a positional glob (like `ls`), anchored at the archive root
         recursive = '**' in pattern
         regex = glob_to_regex(pattern, recursive=recursive, include_hidden=True)
         return bool(re.match(regex, path))
 
     if filter_rules:
-        # rsync-style first-match-wins
-        for sign, pat in filter_rules:
-            recursive = '**' in pat
-            regex = glob_to_regex(pat, recursive=recursive, include_hidden=True)
-            if re.match(regex, path):
-                return sign == '+'
-        return True  # default include
+        return first_match_wins(path, filter_rules)
 
     return True
 

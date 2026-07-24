@@ -954,17 +954,20 @@ def _build_filter_rules_from_argv():
     We parse sys.argv directly because argparse's append action doesn't preserve
     interleaving order between -i/--include and -x/--exclude flags, which matters
     for first-match-wins rsync-style filtering.
+
+    Patterns are passed through verbatim; ``util.pathfilter`` owns the dialect
+    (anchoring, trailing-slash expansion, any-depth matching).
     """
     filter_rules = []
     for i, arg in enumerate(sys.argv):
         if arg in ('-i', '--include') and i + 1 < len(sys.argv):
-            filter_rules.append(('+', _normalize_pattern(sys.argv[i + 1])))
+            filter_rules.append(('+', sys.argv[i + 1]))
         elif arg.startswith('--include='):
-            filter_rules.append(('+', _normalize_pattern(arg.split('=', 1)[1])))
+            filter_rules.append(('+', arg.split('=', 1)[1]))
         elif arg in ('-x', '--exclude') and i + 1 < len(sys.argv):
-            filter_rules.append(('-', _normalize_pattern(sys.argv[i + 1])))
+            filter_rules.append(('-', sys.argv[i + 1]))
         elif arg.startswith('--exclude='):
-            filter_rules.append(('-', _normalize_pattern(arg.split('=', 1)[1])))
+            filter_rules.append(('-', arg.split('=', 1)[1]))
     return filter_rules
 
 
