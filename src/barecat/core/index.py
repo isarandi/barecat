@@ -17,6 +17,7 @@ from ..core.types import SCHEMA_VERSION_MAJOR, SCHEMA_VERSION_MINOR
 
 from ..exceptions import (
     BarecatError,
+    BarecatIntegrityError,
     DirectoryNotEmptyBarecatError,
     FileExistsBarecatError,
     FileNotFoundBarecatError,
@@ -1766,24 +1767,29 @@ class Index(AbstractContextManager):
     def no_triggers(self):
         """Context manager to temporarily disable triggers.
 
-        Also disables foreign key checks, since triggers are what create parent
-        directory rows - without them, FK constraints would fail.
+        Foreign key enforcement is deferred to the next COMMIT (not disabled), since
+        triggers are what create parent directory rows - without them, immediate FK
+        checks would fail mid-bulk. Unlike ``PRAGMA foreign_keys``, deferral can be
+        toggled inside a transaction, so entering/leaving this block never commits -
+        bulk operations stay atomic and a crash rolls back the ``use_triggers=0``
+        config row along with everything else.
 
-        Note: Does NOT rebuild dirs/treestats on exit. Use bulk_write_mode() for
+        Note: Does NOT rebuild dirs/treestats on exit. Use bulk_mode() for
         that, or call update_dirs() and update_treestats() manually.
         """
         prev_triggers = self._triggers_enabled
-        prev_fk = self._foreign_keys_enabled
         if not prev_triggers:
             yield
             return
         try:
             self._triggers_enabled = False
-            self._foreign_keys_enabled = False
+            self.cursor.execute('PRAGMA defer_foreign_keys = ON')
             yield
         finally:
             self._triggers_enabled = prev_triggers
-            self._foreign_keys_enabled = prev_fk
+            # Already-accumulated violations remain deferred until COMMIT; new
+            # statements go back to immediate enforcement.
+            self.cursor.execute('PRAGMA defer_foreign_keys = OFF')
 
     @contextlib.contextmanager
     def bulk_mode(
@@ -1813,7 +1819,10 @@ class Index(AbstractContextManager):
             if self.conn.in_transaction:
                 self.conn.commit()
 
-            # Disable FK (required because dropping unique index on dirs.path breaks FK check)
+            # Deliberate exemption from the defer_foreign_keys regime used elsewhere:
+            # this branch drops the unique index the parent FK needs (deferred checks
+            # could never pass) and its executescript calls force-commit anyway, so
+            # plain FK OFF + commit boundaries are kept here (fresh-archive path only).
             self._foreign_keys_enabled = False
 
             # Drop triggers (they reference unique indexes via ON CONFLICT)
@@ -1866,25 +1875,43 @@ class Index(AbstractContextManager):
 
     @contextlib.contextmanager
     def no_foreign_keys(self):
-        prev_setting = self._foreign_keys_enabled
-        if not prev_setting:
-            yield
-            return
+        """Defer foreign key enforcement to the next COMMIT within this block.
+
+        Violations created inside the block are checked at commit time instead of
+        immediately (they are no longer silently allowed - an unresolved violation
+        raises IntegrityError at COMMIT). Settable inside a transaction, so this
+        never forces a commit.
+        """
+        self.cursor.execute('PRAGMA defer_foreign_keys = ON')
         try:
-            self._foreign_keys_enabled = False
             yield
         finally:
-            self._foreign_keys_enabled = True
+            self.cursor.execute('PRAGMA defer_foreign_keys = OFF')
 
     @contextlib.contextmanager
     def attached_database(self, path: str, name: str = 'sourcedb', readonly: bool = True):
-        """Context manager to attach another SQLite database temporarily."""
+        """Context manager to attach another SQLite database temporarily.
+
+        Commits on successful exit (DETACH is refused inside a transaction that read
+        from the attached database, so this is a hard commit boundary — deferred FK
+        checks fire here). Rolls back instead if the body raised.
+        """
         mode = 'ro' if readonly else 'rw'
         self.cursor.execute(f"ATTACH DATABASE 'file:{path}?mode={mode}' AS {name}")
         try:
             yield
+            try:
+                self.conn.commit()
+            except sqlite3.IntegrityError as e:
+                self.conn.rollback()
+                raise BarecatIntegrityError(
+                    f'Deferred constraint check failed while committing changes involving '
+                    f'attached database {path}: {e}'
+                ) from e
+        except BaseException:
+            self.conn.rollback()
+            raise
         finally:
-            self.conn.commit()
             self.cursor.execute(f'DETACH DATABASE {name}')
 
     def close(self):

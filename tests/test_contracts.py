@@ -175,6 +175,46 @@ def test_append_only_refuses_rplus_open(archive):
 
 
 # =============================================================================
+# Transaction discipline (audit items 16 / B / A-corollary)
+# =============================================================================
+
+
+def test_no_commit_inside_no_triggers(archive):
+    """Entering/leaving no_triggers() must not commit the open transaction."""
+    with Barecat(archive, readonly=False) as bc:
+        bc['a/f.bin'] = b'x'
+        assert bc.index.conn.in_transaction
+        with bc.index.no_triggers():
+            assert bc.index.conn.in_transaction
+        assert bc.index.conn.in_transaction
+
+
+def test_deferred_restrict_delete_pin(archive):
+    """SQLite behavior pin: PRAGMA defer_foreign_keys defers ON DELETE RESTRICT.
+
+    The whole defer design rests on this (verified on SQLite 3.45.1; the docs sentence
+    'RESTRICT is enforced immediately' applies only to DEFERRABLE INITIALLY DEFERRED
+    clauses, not to the pragma). If this test fails on some SQLite build, the
+    no_triggers/no_foreign_keys mechanism must be revisited for that build.
+    """
+    import sqlite3
+
+    with Barecat(archive, readonly=False) as bc:
+        bc['d/f.bin'] = b'x'
+        bc.index.conn.commit()
+        cur = bc.index.cursor
+        cur.execute('PRAGMA defer_foreign_keys = ON')
+        # files.parent references dirs.path with ON DELETE RESTRICT; under deferral
+        # this delete must be accepted now and rejected only at COMMIT.
+        cur.execute("DELETE FROM dirs WHERE path = 'd'")
+        with pytest.raises(sqlite3.IntegrityError):
+            bc.index.conn.commit()
+        bc.index.conn.rollback()
+        assert bc['d/f.bin'] == b'x'
+        assert bc.verify_integrity()
+
+
+# =============================================================================
 # Repeated bulk operations (audit item 17)
 # =============================================================================
 
