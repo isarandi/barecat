@@ -7,6 +7,7 @@ import time
 from typing import TYPE_CHECKING
 
 from ..core.index import Order
+from ..core.types import SHARD_SIZE_UNLIMITED
 from ..exceptions import BarecatError
 from ..util.progbar import progressbar
 from ..io import copyfile as barecat_copyfile
@@ -392,8 +393,14 @@ class BarecatDefragger:
                 rowcls=FragmentGap,
             )
 
+            # An unlimited shard size is stored as None, which cannot be compared
+            # against a file size later on; substitute the sentinel here only, since
+            # None-as-unlimited stays legal for the guards elsewhere in this module.
+            whole_shard = (
+                SHARD_SIZE_UNLIMITED if self.shard_size_limit is None else self.shard_size_limit
+            )
             empty_shard_gaps = [
-                FragmentGap(shard, 0, self.shard_size_limit)
+                FragmentGap(shard, 0, whole_shard)
                 for shard in range(len(self.shard_files))
                 if self.bc.index.logical_shard_end(shard) == 0
             ]
