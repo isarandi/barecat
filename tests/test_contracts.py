@@ -377,3 +377,30 @@ def test_verify_integrity_survives_leaked_temp_table(archive):
         bc.index.cursor.execute('CREATE TEMPORARY TABLE tmp_verify_treestats (dummy)')
         assert bc.verify_integrity()
         assert bc.verify_integrity()
+
+
+# =============================================================================
+# update_file never renames (audit item 19)
+# =============================================================================
+
+
+def test_update_file_rejects_a_string_new_item(archive):
+    """The str form was documented as a rename but silently did nothing."""
+    with Barecat(archive, readonly=False) as bc:
+        bc['a.txt'] = b'old'
+        with pytest.raises(TypeError):
+            bc.update_file('a.txt', 'b.txt', data=b'new')
+        assert 'a.txt' in bc and 'b.txt' not in bc
+
+
+def test_update_file_ignores_the_path_of_new_item(archive):
+    """A BarecatFileInfo's path is metadata only; renaming is rename()'s job."""
+    from barecat.core.types import BarecatFileInfo
+
+    with Barecat(archive, readonly=False) as bc:
+        bc['a.txt'] = b'old'
+        bc.update_file('a.txt', BarecatFileInfo(path='elsewhere.txt', mode=0o644), data=b'new')
+        assert bc['a.txt'] == b'new'
+        assert 'elsewhere.txt' not in bc
+
+

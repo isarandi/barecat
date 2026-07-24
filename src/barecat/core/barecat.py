@@ -774,7 +774,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
     def update_file(
         self,
         old_item: Union[BarecatFileInfo, str],
-        new_item: Union[BarecatFileInfo, str, None] = None,
+        new_item: Optional[BarecatFileInfo] = None,
         *,
         data: Optional[bytes] = None,
         fileobj=None,
@@ -790,9 +790,10 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         Args:
             old_item: The existing file to update. Either a BarecatFileInfo (if user
                       already looked it up) or a path string.
-            new_item: Optional new metadata. If BarecatFileInfo, its metadata fields
-                      (path, mtime_ns, mode, uid, gid) are the new values. If string,
-                      it's the new path (rename). If None, only data is updated.
+            new_item: Optional new metadata as a BarecatFileInfo; its mtime_ns, mode,
+                      uid and gid become the new values. Its `path` is ignored — this
+                      method never renames, use :meth:`rename` for that. If None, only
+                      data is updated.
             data: New file content. Either data or fileobj must be provided.
             fileobj: File-like object to read new data from.
             size: Size of new data. Required for fileobj if writing in-place.
@@ -801,7 +802,16 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         Raises:
             FileNotFoundBarecatError: If file does not exist.
             ValueError: If neither data nor fileobj provided, or both provided.
+            TypeError: If new_item is a string.
         """
+        if isinstance(new_item, str):
+            # The docstring used to promise that a str new_item renamed the file, but
+            # no code ever passed the path on, so such calls were silent no-ops. Fail
+            # loudly rather than keep ignoring them.
+            raise TypeError(
+                'update_file does not rename; new_item must be a BarecatFileInfo or None. '
+                'Use rename() to change a path.'
+            )
 
         old_info = self.index._as_fileinfo(old_item)
 
