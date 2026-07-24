@@ -794,25 +794,42 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             size = len(data)
 
         if size is not None and size <= old_info.size:
-            # Fits in existing space - write in-place
-            shard, offset, size, crc32c = self.sharder.add(
+            # Fits in existing space - write in-place. A source that delivers fewer
+            # bytes than declared (truncated/concurrently-modified file, broken
+            # stream) is handled the way rsync handles it: store what arrived, keep
+            # the index coherent (actual byte count + CRC of those bytes), warn
+            # loudly - a subsequent sync sees the size mismatch and re-transfers.
+            # A read error likewise commits the coherent partial state, then re-raises.
+            reader = _ShortReadRecorder(fileobj) if fileobj is not None else None
+            shard, offset, size_real, crc32c = self.sharder.add(
                 shard=old_info.shard,
                 offset=old_info.offset,
                 size=size,
                 data=data,
-                fileobj=fileobj,
+                fileobj=reader,
                 bufsize=bufsize,
                 raise_if_cannot_fit=True,
+                allow_short=True,
             )
+            if size_real != size:
+                logger.warning(
+                    'Source for %s delivered %d bytes instead of the declared %d; '
+                    'storing the bytes that arrived (a re-sync will re-transfer the file)',
+                    old_info.path,
+                    size_real,
+                    size,
+                )
             self.index.update_file(
                 old_info.path,
-                new_size=size,
+                new_size=size_real,
                 new_crc32c=crc32c,
                 new_mtime_ns=new_mtime_ns,
                 new_mode=new_mode,
                 new_uid=new_uid,
                 new_gid=new_gid,
             )
+            if reader is not None and reader.error is not None:
+                raise reader.error
         else:
             # Doesn't fit or unknown size - allocate new space, then update index
             shard, offset, size, crc32c = self.sharder.add(
@@ -1253,3 +1270,24 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         written for the discarded rows remain as untracked space, never as live data).
         """
         self.close(commit=exc_type is None)
+
+
+class _ShortReadRecorder:
+    """Wraps a file-like source so a read error becomes a short delivery.
+
+    The recorded error lets update_file() first bring the index to a coherent state
+    (actual byte count + CRC), then re-raise.
+    """
+
+    def __init__(self, fileobj):
+        self.fileobj = fileobj
+        self.error = None
+
+    def read(self, n):
+        if self.error is not None:
+            return b''
+        try:
+            return self.fileobj.read(n)
+        except Exception as e:
+            self.error = e
+            return b''

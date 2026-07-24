@@ -149,6 +149,7 @@ class Sharder(AbstractContextManager):
         fileobj=None,
         bufsize=COPY_BUFSIZE,
         raise_if_cannot_fit=False,
+        allow_short=False,
     ):
         if data is None and fileobj is None:
             raise ValueError('Either data or fileobj must be provided')
@@ -205,7 +206,7 @@ class Sharder(AbstractContextManager):
                 crc32c = crc32c_lib.crc32c(chunk, crc32c)
                 os.pwrite(fd, chunk, offset_real + size_real)
                 size_real += len(chunk)
-            if size is not None and size != size_real:
+            if size is not None and size != size_real and not allow_short:
                 raise ValueError(f'Size mismatch! Expected {size}, got only {size_real}')
 
         if offset_real + size_real > self.shard_size_limit:

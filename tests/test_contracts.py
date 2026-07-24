@@ -147,11 +147,6 @@ def test_setitem_existing_key_raises(archive):
 # =============================================================================
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason='audit item 6: short source currently corrupts the entry instead of storing '
-    'the partial content coherently',
-)
 def test_update_file_short_source_stores_partial_coherently(archive):
     with Barecat(archive, readonly=False) as bc:
         bc['f.bin'] = b'A' * 100
