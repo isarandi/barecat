@@ -84,7 +84,6 @@ def test_rename_dir_to_sibling_prefix_name_allowed(archive):
 # =============================================================================
 
 
-@pytest.mark.xfail(strict=True, reason='audit item 18: exist_ok raises on non-empty dir')
 def test_mkdir_exist_ok_nonempty_dir_is_noop(archive):
     with Barecat(archive, readonly=False) as bc:
         bc['d/f.txt'] = b'x'
@@ -92,7 +91,6 @@ def test_mkdir_exist_ok_nonempty_dir_is_noop(archive):
         assert bc['d/f.txt'] == b'x'
 
 
-@pytest.mark.xfail(strict=True, reason='audit item 18: exist_ok overwrites empty-dir metadata')
 def test_mkdir_exist_ok_preserves_existing_metadata(archive):
     with Barecat(archive, readonly=False) as bc:
         bc.mkdir('d', mode=0o700)

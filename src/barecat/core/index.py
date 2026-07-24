@@ -1082,26 +1082,29 @@ class Index(AbstractContextManager):
 
         Args:
             dinfo: Directory info object.
-            exist_ok: Whether to ignore if the directory already exists.
+            exist_ok: Whether to ignore if the directory already exists. As with
+                ``os.makedirs(exist_ok=True)``, an existing directory is then left
+                exactly as it is — its metadata is not refreshed from `dinfo`.
 
         Raises:
             FileExistsBarecatError: If the directory already exists and `exist_ok` is False.
         """
         if dinfo.path == '' and exist_ok:
-            self.cursor.execute(
-                """
-                UPDATE dirs SET mode=:mode, uid=:uid, gid=:gid, mtime_ns=:mtime_ns
-                 WHERE path=''""",
-                dinfo.asdict(),
-            )
+            # Root always exists; exist_ok means "fine, leave it alone", not "update it".
             return
 
-        maybe_replace = 'OR REPLACE' if exist_ok else ''
+        # DO NOTHING rather than OR REPLACE: REPLACE resolves the primary-key conflict
+        # by deleting the existing row first, which trips the children's ON DELETE
+        # RESTRICT foreign key for any non-empty directory — so exist_ok raised on
+        # exactly the case it exists to accept — and silently overwrote mode/uid/gid
+        # for empty ones.
+        maybe_ignore_conflict = 'ON CONFLICT (path) DO NOTHING' if exist_ok else ''
         try:
             self.cursor.execute(
                 f"""
-                INSERT {maybe_replace} INTO dirs (path, mode, uid, gid, mtime_ns)
+                INSERT INTO dirs (path, mode, uid, gid, mtime_ns)
                 VALUES (:path, :mode, :uid, :gid, :mtime_ns)
+                {maybe_ignore_conflict}
                 """,
                 dinfo.asdict(),
             )
