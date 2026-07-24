@@ -108,6 +108,11 @@ class Index(AbstractContextManager):
                 self.cursor.execute('PRAGMA locking_mode=EXCLUSIVE')
             self.cursor.execute('PRAGMA cache_size=-64000')
         else:
+            # PRAGMA foreign_keys is a silent no-op inside a transaction, and on a
+            # freshly created archive the schema statements above leave one open —
+            # commit first or FK enforcement stays off for this whole connection.
+            if self.conn.in_transaction:
+                self.conn.commit()
             self.cursor.execute('PRAGMA recursive_triggers = ON')
             self.cursor.execute('PRAGMA foreign_keys = ON')
 
