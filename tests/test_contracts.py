@@ -422,8 +422,14 @@ def test_find_space_is_gone(archive):
 
 @pytest.mark.parametrize(
     'name',
-    ['q?mark.barecat', 'ha#sh.barecat', 'per%cent.barecat', "quo'te.barecat",
-     'sp ace.barecat', 'amp&and.barecat'],
+    [
+        'q?mark.barecat',
+        'ha#sh.barecat',
+        'per%cent.barecat',
+        "quo'te.barecat",
+        'sp ace.barecat',
+        'amp&and.barecat',
+    ],
 )
 def test_archive_path_with_uri_reserved_characters(tempdir, name):
     """SQLite reads a URI filename as a URI, so '?', '#' and '%' need encoding."""

@@ -568,4 +568,3 @@ class GlobHelper:
                     expr = f'NOT (path GLOB :{pname}) AND ({expr})'
 
         return expr, params
-

@@ -215,9 +215,7 @@ class Sharder(AbstractContextManager):
                     # An unknown-size stream grew past what any single shard may hold.
                     # Reclaim the partial bytes (this was an append), then refuse.
                     os.ftruncate(fd, offset_real)
-                    raise FileTooLargeBarecatError(
-                        size_real + len(chunk), self.shard_size_limit
-                    )
+                    raise FileTooLargeBarecatError(size_real + len(chunk), self.shard_size_limit)
                 crc32c = crc32c_lib.crc32c(chunk, crc32c)
                 os.pwrite(fd, chunk, offset_real + size_real)
                 size_real += len(chunk)

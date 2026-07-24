@@ -999,8 +999,14 @@ class TestRsyncFilterDialect:
     def tree(self):
         with tempfile.TemporaryDirectory() as d:
             src = osp.join(d, 'src')
-            for rel in ('a.log', 'a.txt', 'deep/b.log', 'deep/b.txt', 'logs/c.txt',
-                        'deep/logs/d.txt'):
+            for rel in (
+                'a.log',
+                'a.txt',
+                'deep/b.log',
+                'deep/b.txt',
+                'logs/c.txt',
+                'deep/logs/d.txt',
+            ):
                 full = osp.join(src, rel)
                 os.makedirs(osp.dirname(full), exist_ok=True)
                 with open(full, 'w') as f:

@@ -48,9 +48,7 @@ def upgrade(path: str, workers: int = 8, preserve_backup: bool = True):
     if db_major == SCHEMA_VERSION_MAJOR and db_minor == SCHEMA_VERSION_MINOR:
         if dbase_path != path:
             os.rename(dbase_path, path)
-            print(
-                f'Renamed index: {os.path.basename(dbase_path)} -> {os.path.basename(path)}'
-            )
+            print(f'Renamed index: {os.path.basename(dbase_path)} -> {os.path.basename(path)}')
         else:
             print(f'Database is already at version {db_major}.{db_minor}, nothing to do.')
         return
