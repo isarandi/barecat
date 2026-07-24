@@ -1,9 +1,11 @@
 """High-level convenience functions for opening Barecat archives."""
 
 import functools
+import os.path as osp
 import warnings
 
 from .core.barecat import Barecat
+from .core.paths import resolve_index_path
 
 
 def open(path, mode='r', auto_codec=False, threadsafe_reader=True):
@@ -46,6 +48,11 @@ def open(path, mode='r', auto_codec=False, threadsafe_reader=True):
             auto_codec=auto_codec,
         )
     elif mode == 'r+':
+        if not osp.exists(resolve_index_path(path)):
+            raise FileNotFoundError(
+                f"Archive not found: {path}. Mode 'r+' requires an existing archive; "
+                f"use 'w+' or 'a+' to create one."
+            )
         return Barecat(
             path,
             readonly=False,

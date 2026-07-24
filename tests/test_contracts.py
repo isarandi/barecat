@@ -123,7 +123,6 @@ def test_overwrite_with_exist_ok_false_is_contradiction(archive):
 # =============================================================================
 
 
-@pytest.mark.xfail(strict=True, reason="audit item 37: 'r+' still creates a missing archive")
 def test_open_rplus_missing_archive_raises(archive):
     with pytest.warns(DeprecationWarning):
         with pytest.raises(FileNotFoundError):
