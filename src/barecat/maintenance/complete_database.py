@@ -9,6 +9,7 @@ Usage:
 """
 
 import os
+import sqlite3
 import sys
 import barecat
 from ..util.misc import sqlite_uri
@@ -50,6 +51,34 @@ def upgrade_index(db_path: str):
         index.conn.commit()
         file_count = index.cursor.execute('SELECT COUNT(*) FROM files').fetchone()[0]
         print(f'  Copied {file_count} files')
+
+        # Carry over the settings that change how the archive is written. Copying the
+        # whole config table would import bad state from a damaged source too -- most
+        # dangerously a crash-persisted use_triggers=0, which would silently leave the
+        # rebuilt index without stats maintenance. A "simple" index may have no config
+        # table at all, in which case the defaults of the fresh schema stand.
+        try:
+            carried = index.cursor.execute(
+                """
+                SELECT key, value_text, value_int FROM sourcedb.config
+                WHERE key IN ('shard_size_limit', 'schema_version_major',
+                              'schema_version_minor')
+                """
+            ).fetchall()
+        except sqlite3.OperationalError:
+            carried = []
+        for row in carried:
+            index.cursor.execute(
+                """
+                INSERT INTO config (key, value_text, value_int) VALUES (?, ?, ?)
+                ON CONFLICT (key) DO UPDATE
+                    SET value_text = excluded.value_text, value_int = excluded.value_int
+                """,
+                (row['key'], row['value_text'], row['value_int']),
+            )
+        if carried:
+            print(f'  Carried over {len(carried)} config entries')
+        index.conn.commit()
 
         print('Step 3: Populating dirs table...')
         index.update_dirs()
