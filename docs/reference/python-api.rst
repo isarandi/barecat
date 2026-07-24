@@ -306,6 +306,11 @@ Exceptions
 
    Base exception for barecat errors.
 
+.. py:exception:: barecat.exceptions.BarecatKeyError
+
+   Raised by dict interface (``__getitem__``, ``__delitem__``) when a key is not found.
+   Inherits from both ``BarecatError`` and ``KeyError``.
+
 .. py:exception:: barecat.exceptions.FileNotFoundBarecatError
 
    File not found in archive.

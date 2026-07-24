@@ -34,6 +34,7 @@ from .io.codecs import DecodedView
 from .exceptions import (
     BarecatError,
     BarecatIntegrityError,
+    BarecatKeyError,
     DirectoryNotEmptyBarecatError,
     FileExistsBarecatError,
     FileNotFoundBarecatError,
@@ -83,6 +84,7 @@ __all__ = [
     # Exceptions
     'BarecatError',
     'BarecatIntegrityError',
+    'BarecatKeyError',
     'DirectoryNotEmptyBarecatError',
     'FileExistsBarecatError',
     'FileNotFoundBarecatError',

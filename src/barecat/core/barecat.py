@@ -18,6 +18,7 @@ from ..io.fileobj import BarecatFileObjectHelper
 from ..maintenance.merge import BarecatMergeHelper
 from ..maintenance.defrag import BarecatDefragger
 from ..exceptions import (
+    BarecatKeyError,
     FileExistsBarecatError,
     FileNotFoundBarecatError,
     IsADirectoryBarecatError,
@@ -174,7 +175,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             'SELECT shard, offset, size, crc32c FROM files WHERE path=?', (path,)
         )
         if row is None:
-            raise KeyError(path)
+            raise BarecatKeyError(path)
         raw_data = self.sharder.read_from_address(
             row['shard'], row['offset'], row['size'], row['crc32c']
         )
@@ -310,7 +311,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         try:
             self.remove(path)
         except (FileNotFoundBarecatError, IsADirectoryBarecatError):
-            raise KeyError(path)
+            raise BarecatKeyError(path)
 
     # Filesystem-like API
     def open(

@@ -72,6 +72,19 @@ class BarecatIntegrityError(BarecatError):
         super().__init__(message)
 
 
+class BarecatKeyError(BarecatError, KeyError):
+    """Exception raised when a key (file path) is not found in the dict interface.
+
+    Inherits from both BarecatError and KeyError so it can be caught by either.
+
+    Args:
+        path: path to the file that was not found
+    """
+
+    def __init__(self, path: str):
+        super().__init__(path)
+
+
 class NotEnoughSpaceBarecatError(BarecatError):
     """Exception raised when there is not enough space to write a file to the archive"""
 
