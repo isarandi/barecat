@@ -44,7 +44,13 @@ def upgrade(path: str, workers: int = 8, preserve_backup: bool = True):
     db_major, db_minor = get_schema_version(dbase_path)
 
     if db_major == SCHEMA_VERSION_MAJOR and db_minor == SCHEMA_VERSION_MINOR:
-        print(f'Database is already at version {db_major}.{db_minor}, nothing to do.')
+        if dbase_path != path:
+            os.rename(dbase_path, path)
+            print(
+                f'Renamed index: {os.path.basename(dbase_path)} -> {os.path.basename(path)}'
+            )
+        else:
+            print(f'Database is already at version {db_major}.{db_minor}, nothing to do.')
         return
 
     if db_major > SCHEMA_VERSION_MAJOR:
@@ -70,6 +76,12 @@ def upgrade(path: str, workers: int = 8, preserve_backup: bool = True):
         )
         if db_minor in (1, 2):
             upgrade_0_x_to_0_3(path)
+
+    # Rename from old naming format (-sqlite-index) to new format (.barecat IS the index)
+    final_dbase_path = resolve_index_path(path)
+    if final_dbase_path != path:
+        os.rename(final_dbase_path, path)
+        print(f'Renamed index: {os.path.basename(final_dbase_path)} -> {os.path.basename(path)}')
 
     if not preserve_backup and os.path.exists(backup_path):
         print(f'Removing backup: {backup_path}')
