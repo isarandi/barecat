@@ -3,6 +3,7 @@ import os.path as osp
 from contextlib import AbstractContextManager
 
 import crc32c as crc32c_lib
+from .types import SHARD_SIZE_UNLIMITED
 from ..io.fileobj import BarecatReadOnlyFileObject, BarecatReadWriteFileObject
 from ..exceptions import FileTooLargeBarecatError
 from ..util.misc import find_shard_paths, raise_if_readonly
@@ -27,7 +28,10 @@ class Sharder(AbstractContextManager):
         self.append_only = append_only
         self.allow_writing_symlinked_shard = allow_writing_symlinked_shard
 
-        self.shard_size_limit = shard_size_limit
+        # None means unlimited; resolve it so size comparisons never see None
+        self.shard_size_limit = (
+            SHARD_SIZE_UNLIMITED if shard_size_limit is None else shard_size_limit
+        )
 
         if readonly:
             self.shard_mode_nonlast = 'rb'

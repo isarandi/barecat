@@ -355,13 +355,19 @@ def test_file_too_large_for_shard(tmp_path):
     large_file.write_bytes(b'x' * 1000)  # 1000 bytes
 
     # Try to create archive with shard limit smaller than the file
+    # (overwrite=True: each attempt creates the archive fresh so the passed limit
+    # applies — on an existing archive the stored limit is authoritative)
     with pytest.raises(FileTooLargeBarecatError):
-        with barecat.Barecat(str(archive_path), readonly=False, shard_size_limit=500) as bc:
+        with barecat.Barecat(
+            str(archive_path), readonly=False, shard_size_limit=500, overwrite=True
+        ) as bc:
             bc.add_by_path(str(large_file), 'large.bin')
 
     # Also catchable as ValueError for backward compatibility
     with pytest.raises(ValueError):
-        with barecat.Barecat(str(archive_path), readonly=False, shard_size_limit=500) as bc:
+        with barecat.Barecat(
+            str(archive_path), readonly=False, shard_size_limit=500, overwrite=True
+        ) as bc:
             bc.add_by_path(str(large_file), 'large.bin')
 
 

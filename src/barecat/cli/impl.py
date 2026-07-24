@@ -61,9 +61,17 @@ def merge(
     pattern=None,
     filter_rules=None,
 ):
+    is_new = overwrite or not misc.exists(target_path)
     with barecat_.Barecat(
-        target_path, shard_size_limit=shard_size_limit, readonly=False, overwrite=overwrite
+        target_path,
+        shard_size_limit=shard_size_limit if is_new else None,
+        readonly=False,
+        overwrite=overwrite,
     ) as writer:
+        if not is_new and shard_size_limit is not None:
+            # Explicit -s on an existing archive changes the stored limit; without
+            # -s the stored limit stays authoritative.
+            writer.shard_size_limit = shard_size_limit
         for source_path in source_paths:
             # Build prefix for this archive
             parts = []
@@ -384,14 +392,19 @@ def generate_from_walks(roots, strip_root):
 def create_without_workers(
     filesys_and_store_path_pairs, target_path, shard_size_limit, overwrite=False, exist_ok=True
 ):
+    is_new = overwrite or not misc.exists(target_path)
     with barecat_.Barecat(
         target_path,
-        shard_size_limit=shard_size_limit,
+        shard_size_limit=shard_size_limit if is_new else None,
         readonly=False,
         overwrite=overwrite,
         exist_ok=exist_ok,
         append_only=False,
     ) as writer:
+        if not is_new and shard_size_limit is not None:
+            # Explicit -s on an existing archive changes the stored limit; without
+            # -s the stored limit stays authoritative.
+            writer.shard_size_limit = shard_size_limit
         for filesys_path, store_path in filesys_and_store_path_pairs:
             writer.add_by_path(filesys_path, store_path, dir_exist_ok=True)
 
@@ -410,6 +423,16 @@ def create_with_workers(
         if overwrite:
             misc.remove(target_path)
 
+    is_new = not misc.exists(target_path)
+    if not is_new:
+        with barecat_.Index(resolve_index_path(target_path), readonly=False) as idx:
+            if shard_size_limit is None:
+                # No explicit -s: the stored limit is authoritative
+                shard_size_limit = idx.shard_size_limit
+            elif shard_size_limit != idx.shard_size_limit:
+                # Explicit -s on an existing archive changes the stored limit
+                idx.shard_size_limit = shard_size_limit
+
     with (
         Sharder(
             target_path,
@@ -419,7 +442,9 @@ def create_with_workers(
             allow_writing_symlinked_shard=False,
         ) as sharder,
         ConsumedThreadPool(
-            index_writer_main, main_args=(target_path,), max_workers=workers
+            index_writer_main,
+            main_args=(target_path, shard_size_limit if is_new else None),
+            max_workers=workers,
         ) as ctp,
     ):
         for filesys_path, store_path in filesys_and_store_path_pairs:
@@ -441,8 +466,10 @@ def create_with_workers(
                 )
 
 
-def index_writer_main(target_path, future_iter):
-    with barecat_.Index(target_path, readonly=False) as index_writer:
+def index_writer_main(target_path, shard_size_limit, future_iter):
+    with barecat_.Index(
+        target_path, readonly=False, shard_size_limit=shard_size_limit
+    ) as index_writer:
         for future in future_iter:
             info = future.userdata
             if isinstance(info, BarecatDirInfo):

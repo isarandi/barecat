@@ -12,16 +12,17 @@ import barecat
 from ..cli import impl as impl
 from ..util import misc
 from ..util import physical_order as barecat_physical_order
-from ..core.types import Order, SHARD_SIZE_UNLIMITED
+from ..core.types import Order
 from ..core.paths import resolve_index_path
 from ..maintenance.defrag import BarecatDefragger
 from ..util.misc import parse_size
 
 
 def parse_shard_size(value):
-    """Parse shard size, defaulting to unlimited if None."""
+    """Parse shard size; None means 'not specified' (new archives get unlimited,
+    existing archives keep their stored limit)."""
     if value is None:
-        return SHARD_SIZE_UNLIMITED
+        return None
     return parse_size(value)
 
 

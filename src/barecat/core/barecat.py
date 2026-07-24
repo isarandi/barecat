@@ -122,6 +122,8 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
                 logger.info('Overwriting existing Barecat at %s', path)
                 barecat_util.remove(path)
 
+        is_new = not readonly and not barecat_util.exists(path)
+
         if readonly and not barecat_util.exists(path):
             raise FileNotFoundError(path)
 
@@ -138,7 +140,24 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         self._index_storage = ThreadLocalStorage(threadsafe)
 
         if not readonly and shard_size_limit is not None:
-            self.shard_size_limit = shard_size_limit
+            if is_new:
+                self.shard_size_limit = shard_size_limit
+            else:
+                # An existing archive's stored limit is authoritative; opening with a
+                # different value must not silently reconfigure the archive.
+                passed = (
+                    barecat_util.parse_size(shard_size_limit)
+                    if isinstance(shard_size_limit, str)
+                    else shard_size_limit
+                )
+                if passed != self.shard_size_limit:
+                    logger.warning(
+                        'shard_size_limit=%s was passed, but the archive already stores '
+                        'a limit of %s; keeping the stored limit. Assign the '
+                        'shard_size_limit property to change it explicitly.',
+                        shard_size_limit,
+                        self.shard_size_limit,
+                    )
 
         # Shards
         self.sharder = Sharder(

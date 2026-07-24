@@ -167,6 +167,49 @@ def test_append_only_refuses_rplus_open(archive):
 
 
 # =============================================================================
+# Stored shard-size limit is authoritative (audit items 22 + 46)
+# =============================================================================
+
+
+@pytest.mark.parametrize('workers', [None, 2], ids=['inline', 'workers'])
+def test_add_keeps_stored_shard_size_limit(tempdir, workers):
+    from barecat.cli import impl
+
+    f1 = osp.join(tempdir, 'f1.bin')
+    f2 = osp.join(tempdir, 'f2.bin')
+    for f in (f1, f2):
+        with open(f, 'wb') as fh:
+            fh.write(b'x' * 10)
+
+    archive = osp.join(tempdir, 'a.barecat')
+    impl.create([(f1, 'f1.bin')], archive, shard_size_limit=1024, workers=workers)
+    with Barecat(archive, readonly=True) as bc:
+        assert bc.shard_size_limit == 1024
+
+    # Adding without a limit must keep the stored one
+    impl.create([(f2, 'f2.bin')], archive, shard_size_limit=None, workers=workers)
+    with Barecat(archive, readonly=True) as bc:
+        assert bc.shard_size_limit == 1024
+        assert sorted(bc.files()) == ['f1.bin', 'f2.bin']
+
+    # merge -a variant arrives via impl.merge
+    src = osp.join(tempdir, 'src.barecat')
+    with Barecat(src, readonly=False) as bc:
+        bc['extra.bin'] = b'y' * 10
+    impl.merge([src], archive, shard_size_limit=None, ignore_duplicates=True)
+    with Barecat(archive, readonly=True) as bc:
+        assert bc.shard_size_limit == 1024
+
+    # An explicit limit on add changes the stored one
+    f3 = osp.join(tempdir, 'f3.bin')
+    with open(f3, 'wb') as fh:
+        fh.write(b'z' * 10)
+    impl.create([(f3, 'f3.bin')], archive, shard_size_limit=2048, workers=workers)
+    with Barecat(archive, readonly=True) as bc:
+        assert bc.shard_size_limit == 2048
+
+
+# =============================================================================
 # Legacy archive upgrade (audit item 15)
 # =============================================================================
 
