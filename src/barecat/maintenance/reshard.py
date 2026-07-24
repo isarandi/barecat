@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import os.path as osp
 import uuid
 from typing import TYPE_CHECKING, Optional
 
@@ -15,6 +17,8 @@ from ..io import copyfile as barecat_copyfile
 if TYPE_CHECKING:
     from ..core.barecat import Barecat
 
+logger = logging.getLogger(__name__)
+
 
 def reshard(bc: Barecat, target_shard_size_limit: int):
     """Reshard the archive to a new shard size limit.
@@ -24,6 +28,12 @@ def reshard(bc: Barecat, target_shard_size_limit: int):
     - Overflow goes to temp shard files
     - Old shards are truncated/deleted as they're fully read (progressive storage reclaim)
     - Temp shards are renamed to final names at the end
+
+    Warning:
+        Resharding rewrites shard data in place — do not interrupt it (kill/power
+        loss can leave the archive needing manual recovery). For irreplaceable data,
+        run on a copy of the archive. A clean Python-level error (e.g. out of disk
+        space) is recovered automatically where safe; see the log output in that case.
 
     Args:
         bc: The barecat archive to reshard (must be opened read-write).
@@ -147,6 +157,66 @@ def reshard(bc: Barecat, target_shard_size_limit: int):
         # Reopen sharder with new shards
         bc.sharder._shard_files = bc.sharder.open_shard_files()
 
+    except BaseException as original_error:
+        _recover_after_failed_reshard(bc, temp_sharder, original_error)
+        raise
     finally:
         if temp_sharder is not None:
             temp_sharder.close()
+
+
+def _recover_after_failed_reshard(bc, temp_sharder: Optional[Sharder], original_error):
+    """Best-effort recovery after a clean mid-reshard error (e.g. out of disk space).
+
+    Index rows written so far already carry final shard numbers while the data may
+    still sit in temp-named files — and old shard files with those same final names
+    may still exist, so reads could return silently wrong bytes. Two steps, both
+    collision-safe:
+
+    1. Rename each completed temp shard to its final name only where that name is
+       free (old shard absent or already truncated to zero). Temps whose final name
+       still holds live old data are left in place, with explicit instructions logged.
+    2. Commit the index: reshard moves bytes before updating rows, so the pending
+       rows describe where the data actually is — rolling them back (the normal
+       exception behavior) would instead detach the index from the already-rewritten
+       shard0.
+
+    Recovery-path errors are logged, never raised, so the original error propagates.
+    """
+    try:
+        leftover = []
+        if temp_sharder is not None:
+            temp_sharder.close()
+            for i in range(temp_sharder.num_shards):
+                temp_name = temp_sharder.get_shard_path(i)
+                final_name = bc.sharder.get_shard_path(i + 1)
+                if not osp.exists(temp_name):
+                    continue
+                if not osp.exists(final_name) or osp.getsize(final_name) == 0:
+                    os.replace(temp_name, final_name)
+                else:
+                    leftover.append((temp_name, final_name))
+        bc.index.conn.commit()
+        if leftover:
+            logger.error(
+                'Reshard failed mid-way (%s). Completed portions were recovered, but '
+                'the following temp shards could not be moved because their final '
+                'names still hold not-yet-consumed old data. To finish recovery, '
+                'verify each destination is no longer needed, then move: %s',
+                original_error,
+                '; '.join(f'{t} -> {f}' for t, f in leftover),
+            )
+        else:
+            logger.error(
+                'Reshard failed mid-way (%s); completed portions were recovered and '
+                'the index was committed to match the data on disk. Re-run reshard '
+                'to continue, and run verify to check the archive.',
+                original_error,
+            )
+    except BaseException as recovery_error:
+        logger.error(
+            'Recovery after failed reshard itself failed: %r (original error: %r). '
+            'Temp shard files are left in place.',
+            recovery_error,
+            original_error,
+        )

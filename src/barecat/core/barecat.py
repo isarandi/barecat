@@ -1234,6 +1234,11 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
     def defrag(self, quick=False):
         """Defragment the Barecat archive.
 
+        Warning:
+            Defragmentation rewrites shard data in place — do not interrupt it
+            (kill/power loss can corrupt the archive). For irreplaceable data, run
+            on a copy of the archive.
+
         Args:
             quick: Perform a faster, but less thorough defragmentation.
         """
