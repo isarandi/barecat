@@ -88,7 +88,7 @@ class Index(AbstractContextManager):
         self.fetch_iter = self.fetcher.fetch_iter
         self.fetch_many = self.fetcher.fetch_many
 
-        self._shard_size_limit_cached = None
+        self._shard_size_limit_cached: Optional[int] = None
 
         if is_new:
             sql_dir = osp.join(osp.dirname(__file__), '../sql')
@@ -601,7 +601,7 @@ class Index(AbstractContextManager):
 
     def listdir_infos(
         self, diritem: Union[BarecatDirInfo, str], order: Order = Order.ANY
-    ) -> list[BarecatEntryInfo]:
+    ) -> list[Union[BarecatFileInfo, BarecatDirInfo]]:
         """List the file and directory info objects in a directory (non-recursively).
 
         Args:
@@ -938,7 +938,7 @@ class Index(AbstractContextManager):
         return self.fetch_one('SELECT coalesce(MAX(shard), -1) + 1 FROM files')[0]
 
     # WRITING
-    def add(self, info: BarecatEntryInfo):
+    def add(self, info: Union[BarecatFileInfo, BarecatDirInfo]):
         """Add a file or directory to the index.
 
         Args:
@@ -1811,6 +1811,8 @@ class Index(AbstractContextManager):
             self.cursor.execute('DROP TRIGGER IF EXISTS del_subdir')
             self.cursor.execute('DROP TRIGGER IF EXISTS move_subdir')
             self.cursor.execute('DROP TRIGGER IF EXISTS resize_dir')
+            self.cursor.execute('DROP TRIGGER IF EXISTS prevent_file_as_dir')
+            self.cursor.execute('DROP TRIGGER IF EXISTS prevent_dir_as_file')
 
             # Drop indexes
             self.cursor.execute('DROP INDEX IF EXISTS idx_files_path')

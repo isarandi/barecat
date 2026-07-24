@@ -214,7 +214,8 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         Returns:
             Iterator over file paths.
         """
-        return self.files()
+        for finfo in self.index.iter_all_fileinfos():
+            yield finfo.path
 
     def values(self) -> Iterator[Union[bytes, Any]]:
         """Iterate over all file contents in the archive.
@@ -1214,7 +1215,7 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             n = self.num_files
             return f"Barecat('{self.path}', {mode}, {n} files)"
         except Exception:
-            return f"Barecat('{self.path}', {mode})"
+            return f"Barecat('{self.path}', closed)"
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit a context manager."""
