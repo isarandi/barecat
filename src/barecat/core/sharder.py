@@ -161,6 +161,11 @@ class Sharder(AbstractContextManager):
             raise ValueError('Offset cannot be specified without a shard')
         if shard is not None and offset is None:
             raise ValueError('Shard cannot be specified without an offset')
+        if size is None and data is None and shard is not None:
+            # The post-hoc rollover for streams that outgrow the shard limit assumes
+            # the write was an append to the last shard; explicit placement with an
+            # unknown size could relocate or truncate unrelated data.
+            raise ValueError('Unknown-size writes are only supported in append mode')
 
         if size is None and data is not None:
             size = len(data)
@@ -203,6 +208,13 @@ class Sharder(AbstractContextManager):
                 chunk = fileobj.read(to_read)
                 if not chunk:
                     break
+                if size is None and size_real + len(chunk) > self.shard_size_limit:
+                    # An unknown-size stream grew past what any single shard may hold.
+                    # Reclaim the partial bytes (this was an append), then refuse.
+                    os.ftruncate(fd, offset_real)
+                    raise FileTooLargeBarecatError(
+                        size_real + len(chunk), self.shard_size_limit
+                    )
                 crc32c = crc32c_lib.crc32c(chunk, crc32c)
                 os.pwrite(fd, chunk, offset_real + size_real)
                 size_real += len(chunk)
