@@ -1,6 +1,7 @@
 import os.path as osp
 import shutil
 import tarfile
+import warnings
 import zipfile
 from datetime import datetime
 
@@ -87,17 +88,23 @@ def iter_tarfile(path):
     tar_file_size = osp.getsize(path) // 1024 // 1024
     pbar = progressbar(None, desc='Packing files', unit=' MB', total=tar_file_size)
     progpos = 0
+    num_links_skipped = 0
 
     try:
         with tarfile.open(path, mode='r|*') as tar:
             for member in tar:
+                if member.islnk() or member.issym():
+                    # Barecat stores no links; count them so the loss is visible
+                    # instead of members silently disappearing from the conversion.
+                    num_links_skipped += 1
+                    continue
                 if member.isdir():
                     di = BarecatDirInfo(
                         path=member.name,
                         mode=member.mode,
                         uid=member.uid,
                         gid=member.gid,
-                        mtime_ns=member.mtime * 1_000_000_000,
+                        mtime_ns=int(member.mtime * 1_000_000_000),
                     )
                     yield di, None
                 if member.isfile():
@@ -107,7 +114,7 @@ def iter_tarfile(path):
                         mode=member.mode,
                         uid=member.uid,
                         gid=member.gid,
-                        mtime_ns=member.mtime * 1_000_000_000,
+                        mtime_ns=int(member.mtime * 1_000_000_000),
                     )
 
                     with tar.extractfile(member) as file_in_tar:
@@ -119,23 +126,35 @@ def iter_tarfile(path):
                     progpos += delta
     finally:
         pbar.close()
+        if num_links_skipped:
+            warnings.warn(
+                f'Skipped {num_links_skipped} symlink/hardlink member(s) of {path}: '
+                f'barecat archives cannot store links.',
+                stacklevel=2,
+            )
 
 
 def iter_tarfile_nocontent(path):
     tar_file_size = osp.getsize(path) // 1024 // 1024
     pbar = progressbar(None, desc='Packing files', unit=' MB', total=tar_file_size)
     progpos = 0
+    num_links_skipped = 0
 
     try:
         with tarfile.open(path, mode='r|*') as tar:
             for member in tar:
+                if member.islnk() or member.issym():
+                    # Barecat stores no links; count them so the loss is visible
+                    # instead of members silently disappearing from the conversion.
+                    num_links_skipped += 1
+                    continue
                 if member.isdir():
                     di = BarecatDirInfo(
                         path=member.name,
                         mode=member.mode,
                         uid=member.uid,
                         gid=member.gid,
-                        mtime_ns=member.mtime * 1_000_000_000,
+                        mtime_ns=int(member.mtime * 1_000_000_000),
                     )
                     yield di
                 if member.isfile():
@@ -147,7 +166,7 @@ def iter_tarfile_nocontent(path):
                         mode=member.mode,
                         uid=member.uid,
                         gid=member.gid,
-                        mtime_ns=member.mtime * 1_000_000_000,
+                        mtime_ns=int(member.mtime * 1_000_000_000),
                     )
                     yield fi
                     new_pos = tar.fileobj.tell() // 1024 // 1024
@@ -156,6 +175,12 @@ def iter_tarfile_nocontent(path):
                     progpos += delta
     finally:
         pbar.close()
+        if num_links_skipped:
+            warnings.warn(
+                f'Skipped {num_links_skipped} symlink/hardlink member(s) of {path}: '
+                f'barecat archives cannot store links.',
+                stacklevel=2,
+            )
 
 
 def get_archive_writer(target_path):

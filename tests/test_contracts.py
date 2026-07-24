@@ -548,3 +548,65 @@ def test_index_merge_with_prefix_rebuilds_treestats(tempdir):
 
 
 # =============================================================================
+# Minor sweep: parse_size, tar links, mtime, info defaults (items 58-62)
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    'text,expected',
+    [
+        ('10', 10),
+        ('512K', 512 * 1024),
+        ('1M', 1024**2),
+        ('1MiB', 1024**2),
+        ('1MB', 1000**2),
+        ('1.5GiB', int(1.5 * 1024**3)),
+        ('2GB', 2 * 1000**3),
+        ('  4 G ', 4 * 1024**3),
+    ],
+)
+def test_parse_size_follows_the_coreutils_convention(text, expected):
+    """Bare letters stay binary; a B suffix is decimal, iB binary (item 61)."""
+    from barecat.util.misc import parse_size
+
+    assert parse_size(text) == expected
+
+
+@pytest.mark.parametrize('text', ['1K5', '1XB', 'abc', ''])
+def test_parse_size_rejects_garbage(text):
+    """'1K5' silently parsed as 15 * 1024, and unknown suffixes crashed (item 61)."""
+    from barecat.util.misc import parse_size
+
+    with pytest.raises(ValueError):
+        parse_size(text)
+
+
+def test_tar_conversion_warns_about_dropped_links(tempdir):
+    """Links cannot be stored, so their loss must at least be visible (item 58)."""
+    import io as _io
+    import tarfile
+    import warnings
+
+    from barecat.formats.archive_formats import iter_tarfile
+
+    tar_path = osp.join(tempdir, 't.tar')
+    with tarfile.open(tar_path, 'w') as tf:
+        info = tarfile.TarInfo('real.txt')
+        info.size = 5
+        info.mtime = 1700000000.75  # PAX float mtime, see item 59
+        tf.addfile(info, _io.BytesIO(b'hello'))
+        for name, kind in [('sym.txt', tarfile.SYMTYPE), ('hard.txt', tarfile.LNKTYPE)]:
+            link = tarfile.TarInfo(name)
+            link.type = kind
+            link.linkname = 'real.txt'
+            tf.addfile(link)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        entries = [info for info, _ in iter_tarfile(tar_path)]
+
+    assert [e.path for e in entries] == ['real.txt']
+    assert all(isinstance(e.mtime_ns, int) for e in entries)  # item 59
+    assert any('symlink/hardlink' in str(c.message) for c in caught)
+
+
