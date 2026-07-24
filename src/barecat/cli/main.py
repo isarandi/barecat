@@ -976,6 +976,7 @@ def _handle_add(args, overwrite=False, exist_ok=True):
 
     # Change directory if -C specified (like tar)
     if args.directory:
+        args.archive = osp.abspath(args.archive)
         os.chdir(args.directory)
 
     def matches_patterns(path, patterns, compiled_patterns={}):

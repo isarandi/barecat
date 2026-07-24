@@ -171,7 +171,7 @@ def extract(barecat_path, target_directory):
                 copy(reader.open(path_in_archive, 'rb'), output_file)
 
 
-def archive2barecat(src_path, target_path, shard_size_limit, overwrite=False):
+def archive2barecat(src_path, target_path, shard_size_limit=None, overwrite=False):
     with barecat_.Barecat(
         target_path, shard_size_limit=shard_size_limit, readonly=False, overwrite=overwrite
     ) as writer:
@@ -393,7 +393,7 @@ def create_without_workers(
         append_only=False,
     ) as writer:
         for filesys_path, store_path in filesys_and_store_path_pairs:
-            writer.add_by_path(filesys_path, store_path)
+            writer.add_by_path(filesys_path, store_path, dir_exist_ok=True)
 
 
 def create_with_workers(
@@ -446,7 +446,7 @@ def index_writer_main(target_path, future_iter):
         for future in future_iter:
             info = future.userdata
             if isinstance(info, BarecatDirInfo):
-                index_writer.add_dir(info)
+                index_writer.add_dir(info, exist_ok=True)
                 continue
 
             shard_real, offset_real, size_real, crc32c = future.result()
