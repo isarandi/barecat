@@ -172,10 +172,18 @@ def _no_image_lib():
 
 
 def encode_jpeg(data, quality=95):
-    """Encode numpy array to JPEG bytes. Priority: cv2 > PIL > imageio."""
+    """Encode numpy array to JPEG bytes. Priority: cv2 > PIL > imageio.
+
+    JPEG has no alpha channel. cv2 used to drop it silently while PIL raised, so
+    the same call either lost data or failed depending on which library happened
+    to be installed; both now refuse.
+    """
+    if data.ndim == 3 and data.shape[2] == 4:
+        raise ValueError(
+            'JPEG cannot store an alpha channel. Drop it explicitly (data[:, :, :3]) '
+            'or use PNG.'
+        )
     if _HAS_CV2:
-        if data.ndim == 3 and data.shape[2] == 4:
-            data = data[:, :, :3]  # Drop alpha (JPEG doesn't support it)
         if data.ndim == 3 and data.shape[2] == 3:
             data = _cv2.cvtColor(data, _cv2.COLOR_RGB2BGR)
         # Grayscale (ndim==2) needs no conversion
@@ -193,16 +201,24 @@ def encode_jpeg(data, quality=95):
 
 
 def decode_jpeg(data):
-    """Decode JPEG bytes to numpy array. Priority: jpeg4py > cv2 > PIL > imageio."""
+    """Decode JPEG bytes to a 3-channel numpy array. Priority: jpeg4py > cv2 > PIL.
+
+    Unlike PNG and EXR, JPEG always decodes to 3 channels, including for grayscale
+    images. jpeg4py -- the fastest backend and the one the read path relies on --
+    cannot produce a 2-D array, so promising 2-D here would mean giving it up;
+    instead the slower backends are normalized up to match it.
+    """
     if _HAS_JPEG4PY:
         return _jpeg4py.JPEG(_np.frombuffer(data, _np.uint8)).decode()
     elif _HAS_CV2:
         arr = _cv2.imdecode(_np.frombuffer(data, _np.uint8), _cv2.IMREAD_COLOR)
         return _cv2.cvtColor(arr, _cv2.COLOR_BGR2RGB)
     elif _HAS_PIL and _HAS_NUMPY:
-        return _np.array(_PILImage.open(io.BytesIO(data)))
+        arr = _np.array(_PILImage.open(io.BytesIO(data)))
+        return _np.repeat(arr[:, :, _np.newaxis], 3, axis=2) if arr.ndim == 2 else arr
     elif _HAS_IMAGEIO:
-        return _iio.imread(data)
+        arr = _iio.imread(data)
+        return _np.repeat(arr[:, :, _np.newaxis], 3, axis=2) if arr.ndim == 2 else arr
     else:
         _no_image_lib()
 

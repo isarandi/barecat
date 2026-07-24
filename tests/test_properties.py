@@ -348,9 +348,6 @@ def test_codec_roundtrip_png_grayscale_stays_2d():
     np.testing.assert_array_equal(result, value)
 
 
-@pytest.mark.xfail(
-    strict=False, reason='audit item 51: EXR channel order scrambled at >10 channels'
-)
 def test_codec_roundtrip_exr_many_channels():
     np = pytest.importorskip('numpy')
     from barecat.io.codecs import _HAS_OPENEXR
@@ -367,5 +364,29 @@ def test_codec_compound_outermost_extension_still_raises():
     """Item 49's fallback is for inner extensions only; DecodedView still fails loudly."""
     with pytest.raises(ValueError):
         _roundtrip('thing.unknownext', b'x')
+
+
+def test_codec_jpeg_grayscale_is_three_channel():
+    """Decided contract (item 50): JPEG always decodes 3-channel, on every backend."""
+    np = pytest.importorskip('numpy')
+    from barecat.io.codecs import _HAS_CV2, _HAS_JPEG4PY, _HAS_PIL
+
+    if not (_HAS_CV2 or _HAS_PIL or _HAS_JPEG4PY):
+        pytest.skip('no image backend available')
+    value = np.full((5, 7), 128, dtype=np.uint8)
+    result = _roundtrip('img.jpg', value)
+    assert result.ndim == 3 and result.shape[2] == 3
+
+
+def test_codec_jpeg_refuses_an_alpha_channel():
+    """cv2 used to drop alpha silently while PIL raised; both refuse now (item 50)."""
+    np = pytest.importorskip('numpy')
+    from barecat.io.codecs import _HAS_CV2, _HAS_PIL
+
+    if not (_HAS_CV2 or _HAS_PIL):
+        pytest.skip('no image backend available')
+    value = np.zeros((5, 7, 4), dtype=np.uint8)
+    with pytest.raises(ValueError):
+        _roundtrip('img.jpg', value)
 
 
