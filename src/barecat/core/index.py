@@ -1464,6 +1464,12 @@ class Index(AbstractContextManager):
         # check if num_subdirs, num_files, size_tree, num_files_tree are correct
         # Uses bottom-up recursive CTE: O(files * avg_depth) instead of O(dirs * files) with GLOB
 
+        # Drop leftovers from a previous call that errored out mid-way
+        self.cursor.execute('DROP TABLE IF EXISTS tmp_verify_treestats')
+        self.cursor.execute('DROP TABLE IF EXISTS tmp_verify_file_counts')
+        self.cursor.execute('DROP TABLE IF EXISTS tmp_verify_subdir_counts')
+        self.cursor.execute('DROP TABLE IF EXISTS temp_dir_stats')
+
         # Compute treestats (size_tree, num_files_tree) using recursive CTE
         self.cursor.execute(
             r"""
@@ -1649,6 +1655,9 @@ class Index(AbstractContextManager):
             - GLOB/LIKE would take hours (O(dirs * files) = 7 trillion comparisons)
         """
         logger.info('Computing treestats (bottom-up recursive CTE)')
+        self.cursor.execute('DROP TABLE IF EXISTS tmp_treestats')
+        self.cursor.execute('DROP TABLE IF EXISTS tmp_file_counts')
+        self.cursor.execute('DROP TABLE IF EXISTS tmp_subdir_counts')
         self.cursor.execute(
             r"""
             CREATE TEMPORARY TABLE tmp_treestats AS
@@ -1670,7 +1679,7 @@ class Index(AbstractContextManager):
             """
         )
 
-        print('Creating temporary tables for file counts')
+        logger.info('Creating temporary tables for file counts')
         self.cursor.execute(
             r"""
             CREATE TEMPORARY TABLE tmp_file_counts AS
@@ -1682,7 +1691,7 @@ class Index(AbstractContextManager):
             """
         )
 
-        print('Creating temporary tables for subdir counts')
+        logger.info('Creating temporary tables for subdir counts')
         self.cursor.execute(
             r"""
             CREATE TEMPORARY TABLE tmp_subdir_counts AS
@@ -1694,7 +1703,7 @@ class Index(AbstractContextManager):
             """
         )
 
-        print('Updating dirs table with treestats')
+        logger.info('Updating dirs table with treestats')
         with self.no_triggers():
             self.cursor.execute(
                 r"""

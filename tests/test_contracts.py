@@ -181,11 +181,19 @@ def test_append_only_refuses_rplus_open(archive):
 # =============================================================================
 
 
-@pytest.mark.xfail(strict=True, reason='audit item 17: second treestats rebuild crashes')
 def test_two_bulk_mode_blocks_on_one_connection(archive):
     with Barecat(archive, readonly=False) as bc:
         with bc.index.bulk_mode():
             bc['a/one.bin'] = b'1'
         with bc.index.bulk_mode():
             bc['b/two.bin'] = b'2'
+        assert bc.verify_integrity()
+
+
+def test_verify_integrity_survives_leaked_temp_table(archive):
+    """verify_integrity works even if a previous call errored out mid-way (item 31)."""
+    with Barecat(archive, readonly=False) as bc:
+        bc['f.bin'] = b'x'
+        bc.index.cursor.execute('CREATE TEMPORARY TABLE tmp_verify_treestats (dummy)')
+        assert bc.verify_integrity()
         assert bc.verify_integrity()
