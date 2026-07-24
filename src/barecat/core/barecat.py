@@ -65,6 +65,12 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
     2. A filesystem-like interface consisting of methods such as :meth:`open`, :meth:`exists`, \
         :meth:`listdir`, :meth:`walk`, :meth:`glob`, etc., modeled after Python's ``os`` module.
 
+    The dict interface deliberately deviates from ``MutableMapping`` in one way: assigning to an
+    existing key raises :class:`FileExistsBarecatError` instead of overwriting, since silent
+    overwrites usually indicate a bug in dataset-creation code (and cause fragmentation). Use
+    :meth:`update_file` or :meth:`remove` first when replacing content is intended. Deleting via
+    ``del bc[path]`` also prunes ancestor directories that become empty, unlike :meth:`remove`.
+
     Args:
         path: Path to the Barecat archive (e.g., 'archive.barecat'). Shards are stored
             alongside as 'archive.barecat-shard-XXXXX'.
@@ -76,7 +82,10 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         exist_ok: If True, do not raise an error if the Barecat archive already exists.
         append_only: If True, only allow appending to the Barecat archive.
         threadsafe: If True, the Barecat archive is opened in thread-safe mode, where each thread
-            or process will hold its own database connection and file handles for the shards.
+            or process holds its own SQLite database connection. Shard file handles are shared
+            across threads; this is safe because shard reads use positional I/O (pread/preadv),
+            which does not touch any shared file offset. (If shard access is ever changed to
+            stateful reads, per-thread handles must be reintroduced.)
         allow_writing_symlinked_shard: If True, allow writing to a shard file that is a symlink.
             Setting it to False is recommended, since changing the contents of a symlinked shard
             will bring the original index database out of sync with the actual shard contents.
@@ -298,6 +307,11 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
 
         Args:
             path: Path to the file within the archive.
+
+        Note:
+            Ancestor directories that become empty by this deletion are pruned as well,
+            including ones that were created explicitly (with their own metadata). Use
+            :meth:`remove` to delete a file while keeping empty parent directories.
 
         Raises:
             KeyError: If a file with this path does not exist in the archive.
