@@ -256,13 +256,15 @@ class _CopyContext:
         else:
             self.same_file = False
 
-        # Determine size if not provided
+        # Determine size if not provided. With an explicit src_offset the copy starts
+        # there, not at the current position, so measuring from tell() would report
+        # more bytes than are copied and hand accumulate_crc32c the wrong span.
         if size is None and self.src_seekable:
             try:
                 current = src.tell()
                 end = src.seek(0, os.SEEK_END)
                 src.seek(current)
-                size = end - current
+                size = end - (current if src_offset is None else src_offset)
             except (io.UnsupportedOperation, OSError):
                 pass
         self.size = size

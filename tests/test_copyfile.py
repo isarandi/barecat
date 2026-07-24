@@ -1183,3 +1183,43 @@ class TestDataIntegrity:
                 assert f.read(11) == b'hello world'
         finally:
             os.unlink(path)
+
+
+# =============================================================================
+# size=None combined with an explicit src_offset (audit item 48)
+# =============================================================================
+
+
+def test_copy_size_none_with_explicit_src_offset(tmp_path):
+    """The size was measured from tell(), not from the offset the copy starts at.
+
+    The stream is positioned past the copy offset so the miscount is visible: with
+    the position at 6 the old code copied 10 - 6 = 4 bytes from offset 2, rather
+    than the 8 bytes that actually follow it.
+    """
+    src_path = tmp_path / 'src.bin'
+    dst_path = tmp_path / 'dst.bin'
+    src_path.write_bytes(b'0123456789')
+
+    with open(src_path, 'rb') as src, open(dst_path, 'wb') as dst:
+        src.seek(6)
+        n = copyfile.copy(src, dst, size=None, src_offset=2)
+
+    assert n == 8
+    assert dst_path.read_bytes() == b'23456789'
+
+
+def test_copy_crc32c_size_none_with_explicit_src_offset(tmp_path):
+    """The miscount also fed accumulate_crc32c, so the CRC covered the wrong span."""
+    import crc32c as crc32c_lib
+
+    src_path = tmp_path / 'src.bin'
+    dst_path = tmp_path / 'dst.bin'
+    src_path.write_bytes(b'0123456789')
+
+    with open(src_path, 'rb') as src, open(dst_path, 'wb') as dst:
+        src.seek(6)
+        n, crc = copyfile.copy_crc32c(src, dst, size=None, src_offset=2)
+
+    assert n == 8
+    assert crc == crc32c_lib.crc32c(b'23456789')
