@@ -25,7 +25,7 @@ from ..exceptions import (
     NotADirectoryBarecatError,
 )
 from ..util.misc import datetime_to_ns
-from ..core.paths import normalize_path
+from ..core.paths import get_parent, normalize_path
 from ..util.glob_helper import GlobHelper
 from ..maintenance.merge import IndexMergeHelper
 from contextlib import AbstractContextManager
@@ -1150,6 +1150,12 @@ class Index(AbstractContextManager):
         """
         old_path = self._as_path(old)
         new_path = normalize_path(new)
+        if new_path == '':
+            raise IsADirectoryBarecatError(new_path)
+        new_parent = get_parent(new_path)
+        if new_parent != '' and not self.isdir(new_parent):
+            raise FileNotFoundBarecatError(new_parent)
+
         if self.isfile(new_path):
             if allow_overwrite:
                 self.remove_file(new_path)
@@ -1189,6 +1195,19 @@ class Index(AbstractContextManager):
             return
         if old_path == '':
             raise BarecatError('Cannot rename the root directory')
+        if new_path == '':
+            raise BarecatError('Cannot rename a directory to the root path')
+
+        # Mirror os.rename semantics: destination inside the source is invalid (EINVAL
+        # analog; component-wise test so rename('a', 'ab') stays legal), and the
+        # destination's parent must already exist (ENOENT analog). Without these
+        # checks, the move_subdir trigger updates zero ancestor rows and the index
+        # is corrupted (dangling parents, wrong tree stats).
+        if new_path.startswith(old_path + '/'):
+            raise BarecatError(f'Cannot move directory {old_path!r} into itself ({new_path!r})')
+        new_parent = get_parent(new_path)
+        if new_parent != '' and not self.isdir(new_parent):
+            raise FileNotFoundBarecatError(new_parent)
 
         if self.isfile(new_path):
             raise NotADirectoryBarecatError(new_path)

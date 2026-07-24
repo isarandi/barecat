@@ -53,7 +53,6 @@ def test_inner_dotdot_collapsed(archive):
 # =============================================================================
 
 
-@pytest.mark.xfail(strict=True, reason='audit item 4: missing dest parent corrupts index')
 def test_rename_dir_missing_dest_parent_raises(archive):
     with Barecat(archive, readonly=False) as bc:
         bc['a/f.txt'] = b'x'
@@ -63,7 +62,6 @@ def test_rename_dir_missing_dest_parent_raises(archive):
         assert bc.verify_integrity()
 
 
-@pytest.mark.xfail(strict=True, reason='audit item 4: dir-into-itself corrupts index')
 def test_rename_dir_into_itself_raises(archive):
     with Barecat(archive, readonly=False) as bc:
         bc['d/f.txt'] = b'x'
