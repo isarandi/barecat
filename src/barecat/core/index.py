@@ -22,6 +22,7 @@ from ..exceptions import (
     FileNotFoundBarecatError,
     IsADirectoryBarecatError,
     NotADirectoryBarecatError,
+    is_foreign_key_error,
 )
 from ..util.misc import (
     SQL_VARIABLE_CHUNK,
@@ -1185,8 +1186,18 @@ class Index(AbstractContextManager):
                 """,
                 dict(old_path=old_path, new_path=new_path),
             )
-        except sqlite3.IntegrityError:
-            raise FileExistsBarecatError(new_path)
+        except sqlite3.IntegrityError as e:
+            # A foreign-key violation arrives as the same IntegrityError as a
+            # uniqueness one; reporting it as "already exists" hides the real cause.
+            if is_foreign_key_error(e):
+                raise BarecatIntegrityError(
+                    f'Renaming {old_path!r} to {new_path!r} violates a foreign key: {e}'
+                ) from e
+            raise FileExistsBarecatError(new_path) from e
+        if self.cursor.rowcount == 0:
+            # The UPDATE matched nothing, i.e. the source never existed. The docstring
+            # has always promised this error; the missing check made it a no-op.
+            raise FileNotFoundBarecatError(old_path)
 
     def rename_dir(self, old: Union[BarecatDirInfo, str], new: str, allow_overwrite: bool = False):
         """Rename a directory in the index.
@@ -1299,12 +1310,15 @@ class Index(AbstractContextManager):
         Raises:
             FileNotFoundBarecatError: If any of the files is not found.
         """
-        self.cursor.executemany(
-            """
-            DELETE FROM files WHERE path=?
-            """,
-            ((self._as_path(x),) for x in items),
-        )
+        paths = [self._as_path(x) for x in items]
+        self.cursor.executemany('DELETE FROM files WHERE path=?', ((p,) for p in paths))
+        if self.cursor.rowcount == len(paths):
+            return
+        # executemany reports only the total, so naming the missing file needs a second
+        # pass -- but only on mismatch, so bulk removes keep paying one query per path.
+        for path in paths:
+            if not self.isfile(path):
+                raise FileNotFoundBarecatError(path)
 
     def remove_empty_dir(self, item: Union[BarecatDirInfo, str]):
         """Remove an empty directory from the index.
@@ -1317,6 +1331,10 @@ class Index(AbstractContextManager):
             FileNotFoundBarecatError: If the directory is not found.
         """
         dinfo = self._as_dirinfo(item)
+        if dinfo.path == '':
+            # remove_recursively guards the root; this one did not, and deleting the
+            # root row leaves an archive nothing can be added to.
+            raise BarecatError('Cannot remove the root directory')
         if dinfo.num_entries != 0:
             raise DirectoryNotEmptyBarecatError(item)
         self.cursor.execute('DELETE FROM dirs WHERE path=?', (dinfo.path,))

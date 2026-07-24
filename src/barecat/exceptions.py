@@ -116,3 +116,18 @@ class FileTooLargeBarecatError(BarecatError, ValueError):
             f'File of size {size} is too large to fit into a shard '
             f'(shard_size_limit={shard_size_limit})'
         )
+
+
+def is_foreign_key_error(exc) -> bool:
+    """Whether a ``sqlite3.IntegrityError`` came from a foreign-key constraint.
+
+    Both a uniqueness violation and a foreign-key violation arrive as the same
+    ``IntegrityError``, so mapping one to "already exists" without checking
+    misreports the other. ``sqlite_errorname`` distinguishes them, but only on
+    Python 3.11+; on 3.10 the message is the only signal, and SQLite's wording
+    for this particular constraint is stable.
+    """
+    errorname = getattr(exc, 'sqlite_errorname', None)
+    if errorname is not None:
+        return errorname == 'SQLITE_CONSTRAINT_FOREIGNKEY'
+    return 'FOREIGN KEY constraint failed' in str(exc)

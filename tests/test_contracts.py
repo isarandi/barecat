@@ -462,3 +462,37 @@ def test_fetch_many_without_explicit_bufsize(archive):
         assert [r['path'] for r in rows] == ['a.txt']
 
 
+# =============================================================================
+# Silent no-ops in index mutations (audit item 38)
+# =============================================================================
+
+
+def test_rename_file_reports_a_missing_source(archive):
+    """The UPDATE matched nothing and returned quietly, despite the docstring."""
+    with Barecat(archive, readonly=False) as bc:
+        with pytest.raises(FileNotFoundBarecatError):
+            bc.index.rename_file('nope.txt', 'other.txt')
+
+
+def test_remove_files_reports_a_missing_file(archive):
+    with Barecat(archive, readonly=False) as bc:
+        bc['a.txt'] = b'a'
+        with pytest.raises(FileNotFoundBarecatError):
+            bc.index.remove_files(['a.txt', 'nope.txt'])
+
+
+def test_remove_files_succeeds_when_all_exist(archive):
+    with Barecat(archive, readonly=False) as bc:
+        bc['a.txt'] = b'a'
+        bc['b.txt'] = b'b'
+        bc.index.remove_files(['a.txt', 'b.txt'])
+        assert sorted(bc.files()) == []
+
+
+def test_remove_empty_dir_refuses_the_root(archive):
+    """Deleting the root row leaves an archive nothing can be added to."""
+    with Barecat(archive, readonly=False) as bc:
+        with pytest.raises(BarecatError):
+            bc.index.remove_empty_dir('')
+        bc['a.txt'] = b'a'
+        assert bc['a.txt'] == b'a'
