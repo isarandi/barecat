@@ -168,6 +168,42 @@ def test_append_only_refuses_rplus_open(archive):
 
 
 # =============================================================================
+# Legacy archive upgrade (audit item 15)
+# =============================================================================
+
+
+def _make_unversioned_archive(tempdir, old_naming):
+    """Minimal pre-versioned barecat: old-schema index (files+directories) + one shard."""
+    import sqlite3
+
+    archive_path = osp.join(tempdir, 'arch.barecat')
+    index_path = archive_path + '-sqlite-index' if old_naming else archive_path
+    conn = sqlite3.connect(index_path)
+    conn.execute(
+        'CREATE TABLE files (path TEXT PRIMARY KEY, shard INTEGER, offset INTEGER, size INTEGER)'
+    )
+    conn.execute('CREATE TABLE directories (path TEXT PRIMARY KEY)')
+    conn.execute("INSERT INTO directories VALUES ('d')")
+    conn.execute("INSERT INTO files VALUES ('d/f.bin', 0, 0, 5)")
+    conn.commit()
+    conn.close()
+    with open(archive_path + '-shard-00000', 'wb') as f:
+        f.write(b'hello')
+    return archive_path
+
+
+@pytest.mark.parametrize('old_naming', [False, True], ids=['new-naming', 'old-naming'])
+def test_upgrade_unversioned_archive(tempdir, old_naming):
+    from barecat.maintenance.upgrade_database import upgrade
+
+    archive_path = _make_unversioned_archive(tempdir, old_naming)
+    upgrade(archive_path, workers=2, preserve_backup=True)
+    with Barecat(archive_path, readonly=True) as bc:
+        assert bc['d/f.bin'] == b'hello'
+        assert bc.verify_integrity()
+
+
+# =============================================================================
 # Transaction discipline (audit items 16 / B / A-corollary)
 # =============================================================================
 

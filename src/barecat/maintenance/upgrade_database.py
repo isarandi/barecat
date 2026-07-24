@@ -67,7 +67,7 @@ def upgrade(path: str, workers: int = 8, preserve_backup: bool = True):
             f'Upgrading from pre-versioned format to {SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}...'
         )
         os.rename(dbase_path, backup_path)
-        upgrade_from_unversioned(path)
+        upgrade_from_unversioned(path, backup_path)
         update_crc32c(path, workers=workers)
     elif db_minor < SCHEMA_VERSION_MINOR:
         # Same major, older minor: incremental upgrade
@@ -129,13 +129,19 @@ def upgrade_0_x_to_0_3(path: str):
         index.update_treestats()
 
 
-def upgrade_from_unversioned(path: str):
-    dbase_path = resolve_index_path(path)
-    with barecat.Index(dbase_path, readonly=False) as index_out:
+def upgrade_from_unversioned(path: str, backup_path: str = None):
+    # The backup path must be passed in by the caller who did the rename: re-deriving
+    # it via resolve_index_path here would resolve differently after the rename
+    # changed what exists on disk (for the old '-sqlite-index' naming, the backup is
+    # at 'X-sqlite-index.old' while re-resolution would suggest 'X.old').
+    if backup_path is None:
+        backup_path = resolve_index_path(path) + '.old'
+    # The new index is created at the archive path itself (current naming convention)
+    with barecat.Index(path, readonly=False) as index_out:
         c = index_out.cursor
         c.execute('COMMIT')
         c.execute('PRAGMA foreign_keys=OFF')
-        c.execute(f'ATTACH DATABASE "file:{dbase_path}.old?mode=ro" AS source')
+        c.execute(f'ATTACH DATABASE "file:{backup_path}?mode=ro" AS source')
         print('Migrating dir metadata...')
         c.execute(
             """
@@ -158,7 +164,8 @@ def upgrade_from_unversioned(path: str):
 
 
 def update_crc32c(path_out: str, workers=8):
-    dbase_path = resolve_index_path(path_out)
+    # By this point the index always lives at the archive path itself
+    dbase_path = path_out
     with (
         barecat_cython.BarecatMmapCython(path_out) as sh,
         barecat.Index(dbase_path, readonly=False) as index,
