@@ -111,7 +111,9 @@ class BarecatFileObjectHelper:
 
         # Write modes
         def on_close(fileobj: BarecatReadWriteFileObject):
-            self._reintegrate_fileobj(path, fileobj, is_new=not file_exists)
+            self._reintegrate_fileobj(
+                path, fileobj, is_new=not file_exists, truncated=file_exists and truncating
+            )
 
         if file_exists and not truncating:
             # Open existing file for read/write or append
@@ -127,15 +129,27 @@ class BarecatFileObjectHelper:
             )
 
     def _reintegrate_fileobj(
-        self, path: str, fileobj: BarecatReadWriteFileObject, is_new: bool = False
+        self,
+        path: str,
+        fileobj: BarecatReadWriteFileObject,
+        is_new: bool = False,
+        truncated: bool = False,
     ):
-        """Reintegrate a modified file object back into the archive."""
+        """Reintegrate a modified file object back into the archive.
+
+        Args:
+            path: Path of the file within the archive.
+            fileobj: The file object being closed.
+            is_new: Whether the path did not exist in the index before this open.
+            truncated: Whether this open truncated an existing file ('w'/'w+' modes) —
+                the index must be updated even if nothing was written afterwards.
+        """
         from ..core.types import BarecatFileInfo
 
         index = self.bc.index
         sharder = self.bc.sharder
 
-        if not fileobj.dirty and not is_new:
+        if not fileobj.dirty and not is_new and not truncated:
             return
 
         if fileobj.size == 0:
@@ -144,8 +158,8 @@ class BarecatFileObjectHelper:
                 # Create empty file entry
                 finfo = BarecatFileInfo(path=path, shard=0, offset=0, size=0, crc32c=0)
                 index.add_file(finfo)
-            elif fileobj.original_size > 0:
-                # Truncated to empty
+            else:
+                # Existing file that is empty now (truncating open, or truncate(0))
                 index.update_file(path, new_size=0, new_crc32c=0)
         elif is_new or fileobj.size > fileobj.original_size:
             # New file or file grew - write to new location

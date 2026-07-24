@@ -79,7 +79,6 @@ def test_truncating_open_with_write_replaces_content():
             assert bc.verify_integrity()
 
 
-@pytest.mark.xfail(strict=True, reason='audit item 3: open(path, "w") alone does not truncate')
 def test_truncating_open_without_write_empties_file():
     """open(path, 'w') + close with no writes truncates the file to empty."""
     with tempfile.TemporaryDirectory() as tempdir:
