@@ -16,12 +16,15 @@ def is_running_in_jupyter_notebook():
 
 
 def progressbar(iterable=None, *args, **kwargs):
-    import tqdm
+    # tqdm.auto picks the notebook or terminal implementation itself. Reaching for
+    # tqdm.notebook off a plain `import tqdm` raised AttributeError, since the
+    # submodule is not imported by the package.
+    from tqdm.auto import tqdm as tqdm_auto
 
     if is_running_in_jupyter_notebook():
-        return tqdm.notebook.tqdm(iterable, *args, **kwargs)
+        return tqdm_auto(iterable, *args, **kwargs)
     elif sys.stdout.isatty():
-        return tqdm.tqdm(iterable, *args, dynamic_ncols=True, **kwargs)
+        return tqdm_auto(iterable, *args, dynamic_ncols=True, **kwargs)
     elif iterable is None:
 
         class X:
