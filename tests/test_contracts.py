@@ -190,6 +190,55 @@ def test_two_bulk_mode_blocks_on_one_connection(archive):
         assert bc.verify_integrity()
 
 
+# =============================================================================
+# ConsumedThreadPool shutdown (audit item 5)
+# =============================================================================
+
+
+def test_consumed_threadpool_normal_operation():
+    from barecat.util.consumed_threadpool import ConsumedThreadPool
+
+    received = []
+
+    def consumer_main(future_iter):
+        for future in future_iter:
+            received.append(future.result())
+
+    with ConsumedThreadPool(consumer_main, max_workers=4) as pool:
+        for i in range(50):
+            pool.submit(lambda x: x * 2, args=(i,))
+    assert sorted(received) == [i * 2 for i in range(50)]
+
+
+def test_consumed_threadpool_consumer_error_propagates():
+    """A consumer exception surfaces as RuntimeError instead of deadlocking close()."""
+    from barecat.util.consumed_threadpool import ConsumedThreadPool
+
+    def consumer_main(future_iter):
+        for i, _future in enumerate(future_iter):
+            if i == 3:
+                raise ValueError('consumer died')
+
+    with pytest.raises(RuntimeError, match='Consumer thread raised an exception'):
+        with ConsumedThreadPool(consumer_main, max_workers=4) as pool:
+            for i in range(100):
+                pool.submit(lambda x: x, args=(i,))
+
+
+def test_consumed_threadpool_consumer_early_return():
+    """A consumer returning before the sentinel must not deadlock close()."""
+    from barecat.util.consumed_threadpool import ConsumedThreadPool
+
+    def consumer_main(future_iter):
+        for i, _future in enumerate(future_iter):
+            if i == 3:
+                return
+
+    with ConsumedThreadPool(consumer_main, max_workers=4) as pool:
+        for i in range(100):
+            pool.submit(lambda x: x, args=(i,))
+
+
 def test_verify_integrity_survives_leaked_temp_table(archive):
     """verify_integrity works even if a previous call errored out mid-way (item 31)."""
     with Barecat(archive, readonly=False) as bc:

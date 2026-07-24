@@ -64,11 +64,20 @@ class ConsumedThreadPool:
         self.consumer_thread.start()
 
     def _safe_consumer_main(self, main_args, main_kwargs):
+        future_iter = IterableQueue(self.q)
         try:
-            main_kwargs = {**main_kwargs, 'future_iter': IterableQueue(self.q)}
+            main_kwargs = {**main_kwargs, 'future_iter': future_iter}
             self.consumer_main(*main_args, **main_kwargs)
         except Exception as e:
             self.consumer_error_queue.put(e)
+        finally:
+            # If the consumer stopped before seeing the sentinel (exception or early
+            # return), keep consuming and discarding items until the sentinel arrives.
+            # This keeps the bounded queue moving so worker callbacks never block on a
+            # full queue, and guarantees close() can always deliver the sentinel.
+            if not future_iter.sentinel_seen:
+                while self.q.get() is not None:
+                    pass
 
     def submit(self, fn=None, userdata=None, args=None, kwargs=None):
         if not self.consumer_error_queue.empty():
@@ -90,7 +99,8 @@ class ConsumedThreadPool:
     def close(self):
         self.executor.shutdown(wait=True)
         self.q.put(None)
-        self.q.join()
+        # Joining the consumer thread subsumes waiting for the queue: the consumer
+        # runs until it has seen the sentinel (draining leftovers if it failed early).
         self.consumer_thread.join()
 
         if not self.consumer_error_queue.empty():
@@ -105,14 +115,20 @@ class ConsumedThreadPool:
 
 
 class IterableQueue:
+    """Iterates a queue up to the None sentinel, recording whether it was reached.
+
+    Note: this class no longer calls task_done()/join() on the queue — shutdown
+    synchronization goes through joining the consumer thread instead.
+    """
+
     def __init__(self, q):
         self.q = q
+        self.sentinel_seen = False
 
     def __iter__(self):
         while (item := self.q.get()) is not None:
             yield item
-            self.q.task_done()
-        self.q.task_done()
+        self.sentinel_seen = True
 
 
 def noop():
