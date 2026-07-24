@@ -74,6 +74,17 @@ class BarecatIntegrityError(BarecatError):
         super().__init__(message)
 
 
+class PathEscapeBarecatError(BarecatError):
+    """Exception raised when a path would escape the archive root (leading '..').
+
+    Args:
+        path: the offending path as given by the caller
+    """
+
+    def __init__(self, path: str):
+        super().__init__(f'Path escapes the archive root: {path!r}')
+
+
 class BarecatKeyError(BarecatError, KeyError):
     """Exception raised when a key (file path) is not found in the dict interface.
 

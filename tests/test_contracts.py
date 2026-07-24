@@ -31,7 +31,6 @@ def archive(tempdir):
 # =============================================================================
 
 
-@pytest.mark.xfail(strict=True, reason='audit item 2: leading .. paths accepted into the index')
 def test_parent_escape_rejected(archive):
     """Paths escaping the archive root are rejected, not stored."""
     with Barecat(archive, readonly=False) as bc:

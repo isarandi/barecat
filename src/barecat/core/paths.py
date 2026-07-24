@@ -3,6 +3,8 @@
 import os
 import os.path as osp
 
+from ..exceptions import PathEscapeBarecatError
+
 
 def resolve_index_path(path):
     """Resolve the index database path for a barecat archive.
@@ -29,8 +31,16 @@ def resolve_index_path(path):
 
 
 def normalize_path(path):
-    """Normalize an archive path (strip leading slashes, handle '.')."""
+    """Normalize an archive path (strip leading slashes, handle '.').
+
+    Raises:
+        PathEscapeBarecatError: If the path escapes the archive root. normpath
+            collapses inner '..' components, so an escaping component can only
+            survive at the front — the check is a 3-character prefix comparison.
+    """
     x = osp.normpath(path).lstrip('/')
+    if x == '..' or x.startswith('../'):
+        raise PathEscapeBarecatError(path)
     return '' if x == '.' else x
 
 

@@ -1607,6 +1607,22 @@ class Index(AbstractContextManager):
             for row in conflicts:
                 logger.error('  %s', row[0])
 
+        # Check for stored paths escaping the archive root (leading '..'): such
+        # entries are rejected at the API boundary and therefore unreachable — they
+        # can only come from legacy archives or merges from damaged sources.
+        escaping = self.fetch_all(
+            """
+            SELECT path FROM files WHERE path = '..' OR path LIKE '../%'
+            UNION ALL
+            SELECT path FROM dirs WHERE path = '..' OR path LIKE '../%'
+            """
+        )
+        if escaping:
+            is_good = False
+            logger.error('Stored paths escape the archive root (unreachable via the API):')
+            for row in escaping:
+                logger.error('  %s', row[0])
+
         # Cleanup temporary tables
         self.cursor.execute('DROP TABLE IF EXISTS tmp_verify_treestats')
         self.cursor.execute('DROP TABLE IF EXISTS tmp_verify_file_counts')
