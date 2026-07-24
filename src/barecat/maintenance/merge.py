@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from ..core.barecat import Barecat
 
 from ..core.paths import get_ancestors, resolve_index_path
+from ..exceptions import FileTooLargeBarecatError
 from ..io.copyfile import copy
 
 
@@ -297,6 +298,22 @@ class BarecatMergeHelper:
                     WHERE dirs.path = src.path"""
             )
 
+            maybe_ignore = 'OR IGNORE' if ignore_duplicates else ''
+
+            # Zero-size files carry no bytes, so the block-copy loop below would never
+            # insert their rows (a source shard of logical size zero contributes no
+            # copiable block at all). Insert them up front, pointed at the current end
+            # of the output shard; the block queries below exclude size = 0.
+            index.cursor.execute(
+                f"""
+                INSERT {maybe_ignore} INTO files (
+                    path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
+                SELECT {path_expr}, :out_shard_number, :out_shard_offset,
+                    size, crc32c, mode, uid, gid, mtime_ns
+                FROM sourcedb.files WHERE size = 0""",
+                dict(out_shard_number=out_shard_number, out_shard_offset=out_shard_offset),
+            )
+
             in_shard_number = 0
             in_shard_path = f'{source_path}-shard-{in_shard_number:05d}'
             in_shard = open(in_shard_path, 'rb')
@@ -307,7 +324,7 @@ class BarecatMergeHelper:
             )[0]
 
             while True:
-                if in_shard_offset == in_shard_end:
+                if in_shard_offset >= in_shard_end:
                     # we finished this in_shard, move to the next one
                     in_shard.close()
                     in_shard_number += 1
@@ -333,7 +350,7 @@ class BarecatMergeHelper:
                         FROM sourcedb.files
                         WHERE offset >= :in_shard_offset
                         AND offset + size <= :in_shard_offset + :out_shard_space_left
-                        AND shard = :in_shard_number""",
+                        AND shard = :in_shard_number AND size > 0""",
                         dict(
                             in_shard_offset=in_shard_offset,
                             out_shard_space_left=out_shard_space_left,
@@ -341,6 +358,37 @@ class BarecatMergeHelper:
                         ),
                     )
                     if fetched is None or fetched[0] is None:
+                        if out_shard_offset == 0:
+                            # Even a fresh output shard cannot fit anything: the gap
+                            # (deleted files) between the cursor and the next real file
+                            # is the obstruction, since the block copy is contiguous
+                            # from the cursor. Advance the cursor to the next file
+                            # instead of minting empty shards forever.
+                            next_row = index.fetch_one(
+                                """
+                                SELECT offset, size FROM sourcedb.files
+                                WHERE shard = :in_shard_number
+                                AND offset >= :in_shard_offset AND size > 0
+                                ORDER BY offset LIMIT 1""",
+                                dict(
+                                    in_shard_number=in_shard_number,
+                                    in_shard_offset=in_shard_offset,
+                                ),
+                            )
+                            if next_row is None:
+                                # Only trailing junk remains in this source shard
+                                in_shard_offset = in_shard_end
+                                continue
+                            if next_row['offset'] == in_shard_offset:
+                                # No gap to skip: this single file alone exceeds the limit
+                                raise FileTooLargeBarecatError(
+                                    f'File of size {next_row["size"]} in source shard '
+                                    f'{in_shard_number} exceeds the destination shard '
+                                    f'size limit {self._bc.shard_size_limit}'
+                                )
+                            in_shard_offset = next_row['offset']
+                            in_shard.seek(in_shard_offset)
+                            continue
                         # No file of the current in_shard fits in the current out_shard,
                         # must start a new one
                         sharder.start_new_shard()
@@ -351,35 +399,41 @@ class BarecatMergeHelper:
 
                     max_copiable_amount = fetched[0]
                 else:
-                    max_copiable_amount = None
+                    # Copy exactly the logical span (physical trailing junk past the
+                    # logical end would otherwise stall the cursor and get copied
+                    # into the destination)
+                    max_copiable_amount = in_shard_end - in_shard_offset
 
-                # now we need to update the index, but we need to update the offset and shard
-                # of the files that we copied
-                maybe_ignore = 'OR IGNORE' if ignore_duplicates else ''
-                index.cursor.execute(
-                    f"""
-                    INSERT {maybe_ignore} INTO files (
-                        path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
-                    SELECT {path_expr}, :out_shard_number, offset + :out_minus_in_shard_offset,
-                        size, crc32c, mode, uid, gid, mtime_ns
-                    FROM sourcedb.files
-                    WHERE offset >= :in_shard_offset AND shard = :in_shard_number"""
-                    + (
-                        """
-                    AND offset + size <= :in_shard_offset + :max_copiable_amount
-                    """
-                        if max_copiable_amount is not None
-                        else ''
-                    ),
-                    dict(
-                        out_shard_number=out_shard_number,
-                        in_shard_offset=in_shard_offset,
-                        out_minus_in_shard_offset=out_shard_offset - in_shard_offset,
-                        in_shard_number=in_shard_number,
-                        max_copiable_amount=max_copiable_amount,
-                    ),
-                )
+                # Move the bytes first, then insert the index rows describing them
+                # (data before metadata: a mid-copy failure must not leave committed
+                # rows pointing at unwritten regions). All values the INSERT needs
+                # are pre-copy locals, unchanged by the copy itself.
+                pre_copy_out_offset = out_shard_offset
                 copy(in_shard, out_shard, max_copiable_amount)
+                try:
+                    index.cursor.execute(
+                        f"""
+                        INSERT {maybe_ignore} INTO files (
+                            path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)
+                        SELECT {path_expr}, :out_shard_number, offset + :out_minus_in_shard_offset,
+                            size, crc32c, mode, uid, gid, mtime_ns
+                        FROM sourcedb.files
+                        WHERE offset >= :in_shard_offset AND shard = :in_shard_number
+                        AND size > 0
+                        AND offset + size <= :in_shard_offset + :max_copiable_amount""",
+                        dict(
+                            out_shard_number=out_shard_number,
+                            in_shard_offset=in_shard_offset,
+                            out_minus_in_shard_offset=out_shard_offset - in_shard_offset,
+                            in_shard_number=in_shard_number,
+                            max_copiable_amount=max_copiable_amount,
+                        ),
+                    )
+                except BaseException:
+                    # Copied bytes have no rows pointing at them; reclaim the space
+                    # (merge is the sole writer of this shard while running).
+                    out_shard.truncate(pre_copy_out_offset)
+                    raise
                 out_shard_offset = out_shard.tell()
                 in_shard_offset = in_shard.tell()
 

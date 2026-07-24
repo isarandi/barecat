@@ -192,10 +192,6 @@ def test_merge_preserves_content(files1, files2):
         _assert_content(dest_path, {**src1, **src2})
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason='audit item 64: merge drops all files of a zero-logical-size source shard',
-)
 def test_merge_only_empty_files_preserved():
     """A source archive holding only zero-byte files must merge without losing entries."""
     with tempfile.TemporaryDirectory() as tempdir:
@@ -208,10 +204,6 @@ def test_merge_only_empty_files_preserved():
             assert bc.verify_integrity()
 
 
-@pytest.mark.skip(
-    reason='audit item 9: infinite loop (gap + next file > dest shard limit) — '
-    'enable together with the fix'
-)
 def test_merge_gap_exceeding_dest_limit_terminates():
     """A source gap larger than the dest shard limit must not hang the merge."""
     with tempfile.TemporaryDirectory() as tempdir:
