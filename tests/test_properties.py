@@ -98,7 +98,6 @@ def test_truncating_open_without_write_empties_file():
 # =============================================================================
 
 
-@pytest.mark.xfail(strict=True, reason='audit item 8: read past EOF moves position backwards')
 def test_read_past_eof_keeps_position():
     with tempfile.TemporaryDirectory() as tempdir:
         archive_path = osp.join(tempdir, 'arch.barecat')
@@ -110,7 +109,6 @@ def test_read_past_eof_keeps_position():
                 assert f.tell() == 20
 
 
-@pytest.mark.xfail(strict=True, reason='audit item 8: negative read size reverses position')
 def test_negative_read_size_means_read_all():
     with tempfile.TemporaryDirectory() as tempdir:
         archive_path = osp.join(tempdir, 'arch.barecat')
@@ -121,7 +119,6 @@ def test_negative_read_size_means_read_all():
                 assert f.tell() == 10
 
 
-@pytest.mark.xfail(strict=True, reason='audit item 8: truncate-then-grow resurrects stale bytes')
 def test_truncate_then_grow_gap_is_zeros():
     with tempfile.TemporaryDirectory() as tempdir:
         archive_path = osp.join(tempdir, 'arch.barecat')

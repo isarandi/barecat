@@ -409,13 +409,15 @@ class BarecatReadWriteFileObject(BarecatFileObject):
             self.seek(0, io.SEEK_END)
 
     def read(self, size: int = -1) -> bytes:
+        self._check_open()
         if not self.can_read:
             raise io.UnsupportedOperation('not readable')
 
-        if size == -1:
+        if size < 0:
             size = self.size - self.position
 
-        size = min(size, self.size - self.position)
+        # Reading at or past EOF yields b'' and leaves the position untouched
+        size = max(0, min(size, self.size - self.position))
 
         if size == 0:
             return b''
@@ -449,6 +451,7 @@ class BarecatReadWriteFileObject(BarecatFileObject):
         return shard_data + spillover_data
 
     def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
+        self._check_open()
         if not data:
             return 0
 
@@ -456,6 +459,13 @@ class BarecatReadWriteFileObject(BarecatFileObject):
             self.seek(0, io.SEEK_END)
 
         self.dirty = True
+
+        # Writing past EOF first zero-fills the gap [EOF, position) (sparse-file
+        # semantics; the fill writes real zeros however far the seek went)
+        if self.position > self.size:
+            self._zero_range(self.size, self.position)
+            self.size = self.position
+
         bytes_written = 0
         data = memoryview(data)
 
@@ -484,9 +494,11 @@ class BarecatReadWriteFileObject(BarecatFileObject):
         return bytes_written
 
     def tell(self):
+        self._check_open()
         return self.position
 
     def seek(self, offset, whence=0):
+        self._check_open()
         if whence == io.SEEK_SET:
             new_position = offset
         elif whence == io.SEEK_CUR:
@@ -503,6 +515,7 @@ class BarecatReadWriteFileObject(BarecatFileObject):
         return self.position
 
     def truncate(self, size: int = None) -> int:
+        self._check_open()
         if size is None:
             size = self.position
 
@@ -582,3 +595,24 @@ class BarecatReadWriteFileObject(BarecatFileObject):
                 mode='w+b',
                 dir=osp.dirname(self.shard_file.name),
             )
+
+    def _check_open(self):
+        if self._closed:
+            raise ValueError('I/O operation on closed file.')
+
+    def _zero_range(self, start: int, end: int):
+        """Fill [start, end) with zero bytes, spanning shard region and/or spillover."""
+        shard_end = min(end, self.original_size)
+        if start < shard_end:
+            fd = self.shard_file.fileno()
+            zero_offset = self.offset + start
+            zero_length = shard_end - start
+            try:
+                _fallocate(fd, FALLOC_FL_ZERO_RANGE, zero_offset, zero_length)
+            except OSError:
+                os.pwrite(fd, bytearray(zero_length), zero_offset)
+        if end > self.original_size:
+            self._ensure_spillover()
+            spill_start = max(start, self.original_size) - self.original_size
+            self.spillover.seek(spill_start)
+            write_zeroes(self.spillover, end - self.original_size - spill_start)
