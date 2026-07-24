@@ -13,7 +13,11 @@ if TYPE_CHECKING:
     from ..core.barecat import Barecat
 
 from ..core.paths import get_ancestors, resolve_index_path
-from ..exceptions import FileTooLargeBarecatError
+from ..exceptions import (
+    FileExistsBarecatError,
+    FileTooLargeBarecatError,
+    IsADirectoryBarecatError,
+)
 from ..io.copyfile import copy
 
 
@@ -529,6 +533,21 @@ class BarecatMergeHelper:
 
             if not file_infos:
                 return
+
+            # Filter-aware safety checks over exactly the surviving file set (the
+            # unfiltered path does these globally; restricting to file_infos avoids
+            # false positives from excluded entries).
+            if shard_size_limit is not None:
+                max_size = max(fi.size for fi in file_infos)
+                if max_size > shard_size_limit:
+                    raise FileTooLargeBarecatError(max_size, shard_size_limit)
+            if not ignore_duplicates:
+                for fi in file_infos:
+                    dest_path = f'{prefix}/{fi.path}' if prefix else fi.path
+                    if index.isdir(dest_path):
+                        raise IsADirectoryBarecatError(dest_path)
+                    if index.isfile(dest_path):
+                        raise FileExistsBarecatError(dest_path)
 
             # Step 2: Sort by physical order for efficient sequential reads
             file_infos.sort(key=lambda f: (f.shard, f.offset))
