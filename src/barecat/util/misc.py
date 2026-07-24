@@ -1,6 +1,7 @@
 import argparse
 import functools
 import glob
+import re
 import itertools
 import os
 import os.path as osp
@@ -169,17 +170,56 @@ def raise_if_readonly_or_append_only(method):
     return wrapper
 
 
+# GNU coreutils' convention (du, ls --block-size, dd): a bare letter is binary,
+# a 'B' suffix is decimal, and 'iB' is binary. Bare K/M/G/T keep their 1024-based
+# meaning so existing shard sizes do not silently change.
+_SIZE_UNITS = {
+    'B': 1,
+    'K': 1024,
+    'KB': 1000,
+    'KIB': 1024,
+    'M': 1024**2,
+    'MB': 1000**2,
+    'MIB': 1024**2,
+    'G': 1024**3,
+    'GB': 1000**3,
+    'GIB': 1024**3,
+    'T': 1024**4,
+    'TB': 1000**4,
+    'TIB': 1024**4,
+    'P': 1024**5,
+    'PB': 1000**5,
+    'PIB': 1024**5,
+}
+
+
 def parse_size(size):
+    """Parse a size like '10', '512K', '1.5GiB' or '2GB'.
+
+    The suffix must come last: the old substring search accepted '1K5' as
+    15 * 1024, and any suffix it did not know (KB, MiB) crashed.
+    """
     if size is None:
         return None
-    units = dict(K=1024, M=1024**2, G=1024**3, T=1024**4)
-    size = size.upper()
+    if isinstance(size, int):
+        return size
 
-    for unit, factor in units.items():
-        if unit in size:
-            return int(float(size.replace(unit, '')) * factor)
+    text = size.strip().upper()
+    match = re.fullmatch(r'\s*([0-9]*\.?[0-9]+)\s*([A-Z]*)\s*', text)
+    if match is None:
+        raise ValueError(f'Cannot parse size {size!r}')
+    number, suffix = match.groups()
 
-    return int(size)
+    if suffix == '':
+        factor = 1
+    elif suffix in _SIZE_UNITS:
+        factor = _SIZE_UNITS[suffix]
+    else:
+        raise ValueError(
+            f'Unknown size suffix {suffix!r} in {size!r}. Use one of: '
+            + ', '.join(sorted(_SIZE_UNITS))
+        )
+    return int(float(number) * factor)
 
 
 def datetime_to_ns(dt):
