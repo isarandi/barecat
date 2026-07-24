@@ -12,12 +12,28 @@ def read_file(input_path, mode='r'):
         return f.read()
 
 
+def find_shard_paths(path):
+    """Find the shard files of an archive, sorted numerically.
+
+    Matches any number of digits (shard numbering grows past five digits at shard
+    100000), rejects non-numeric strays like 'X-shard-backup', and sorts numerically
+    (lexicographic order breaks exactly at the 5-to-6 digit boundary).
+    """
+    prefix = f'{os.fspath(path)}-shard-'
+    numbered = []
+    for p in glob.glob(f'{glob.escape(prefix)}*'):
+        suffix = p[len(prefix) :]
+        if suffix.isdigit():
+            numbered.append((int(suffix), p))
+    return [p for _, p in sorted(numbered)]
+
+
 def remove(path):
     path = os.fspath(path)
     # New format: path is the index file directly
     # Old format: path-sqlite-index is the index file
     index_paths = [path, f'{path}-sqlite-index']
-    shard_paths = glob.glob(f'{path}-shard-?????')
+    shard_paths = find_shard_paths(path)
     # SQLite can create journal, wal, and shm files
     sqlite_extras = []
     for index_path in index_paths:
@@ -41,7 +57,7 @@ def exists(path):
         return True
     if osp.exists(f'{path}-sqlite-index'):
         return True
-    shard_paths = glob.glob(f'{path}-shard-?????')
+    shard_paths = find_shard_paths(path)
     return len(shard_paths) > 0
 
 

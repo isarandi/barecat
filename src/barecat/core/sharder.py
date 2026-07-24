@@ -1,4 +1,3 @@
-import glob
 import os
 import os.path as osp
 from contextlib import AbstractContextManager
@@ -6,7 +5,7 @@ from contextlib import AbstractContextManager
 import crc32c as crc32c_lib
 from ..io.fileobj import BarecatReadOnlyFileObject, BarecatReadWriteFileObject
 from ..exceptions import FileTooLargeBarecatError
-from ..util.misc import raise_if_readonly
+from ..util.misc import find_shard_paths, raise_if_readonly
 from ..io.open import open_, reopen
 from ..io.copyfile import copy
 
@@ -258,7 +257,7 @@ class Sharder(AbstractContextManager):
         return f'{self.path}-shard-{i_shard:05d}'
 
     def open_shard_files(self):
-        shard_paths = sorted(glob.glob(f'{self.path}-shard-?????'))
+        shard_paths = find_shard_paths(self.path)
         if (
             not self.readonly
             and not self.allow_writing_symlinked_shard
