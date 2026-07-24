@@ -117,6 +117,19 @@ class IndexMergeHelper:
                 (new_shard_number,),
             )
 
+            # num_subdirs is not additive: a directory present in both archives has
+            # its subdirectory count summed, so a subdirectory the two share ends up
+            # counted twice. Recompute it for the paths the source contributed --
+            # bounded by the merged subtree rather than the whole destination, and a
+            # no-op for paths that did not previously exist.
+            self._index.cursor.execute(
+                f"""
+                UPDATE dirs SET
+                    num_subdirs = (SELECT COUNT(*) FROM dirs AS d2 WHERE d2.parent = dirs.path)
+                WHERE path IN (SELECT {path_expr} FROM sourcedb.dirs)
+                """
+            )
+
         # Post-processing (triggers can be on)
         if prefix:
             # Update num_subdirs and num_files for prefix chain (these aren't additive)
@@ -130,7 +143,10 @@ class IndexMergeHelper:
                 """,
                     (ancestor, ancestor, ancestor),
                 )
-        elif update_treestats and ignore_duplicates:
+        if update_treestats and ignore_duplicates:
+            # Rows dropped as duplicates were still counted by the additive upsert, and
+            # only a rebuild knows which ones were dropped. This used to be an `elif`,
+            # so a prefixed merge kept the doubled size_tree and num_files_tree.
             self._index.update_treestats()
 
     def check_merge_conflicts(self, prefix: str) -> str:

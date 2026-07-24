@@ -496,3 +496,55 @@ def test_remove_empty_dir_refuses_the_root(archive):
             bc.index.remove_empty_dir('')
         bc['a.txt'] = b'a'
         assert bc['a.txt'] == b'a'
+
+
+# =============================================================================
+# Symlink-merge directory statistics (audit item 52)
+# =============================================================================
+
+
+def _build(path, entries):
+    with Barecat(path, readonly=False) as bc:
+        for k, v in entries.items():
+            bc[k] = v
+
+
+def test_index_merge_counts_a_shared_subdir_once(tempdir):
+    """num_subdirs was summed, so a subdirectory present in both archives counted twice."""
+    src1 = osp.join(tempdir, 's1.barecat')
+    src2 = osp.join(tempdir, 's2.barecat')
+    # Both archives contain shared/a, so the additive upsert gave shared 1 + 1 subdirs
+    _build(src1, {'shared/a/f1.bin': b'1'})
+    _build(src2, {'shared/a/f2.bin': b'2'})
+
+    out = osp.join(tempdir, 'out.barecat')
+    with Barecat(out, readonly=False) as bc:
+        for src in (src1, src2):
+            bc.index.merge_from_other_barecat(src)
+
+    with Barecat(out, readonly=True) as bc:
+        assert bc.index.verify_integrity()
+        assert bc.index.lookup_dir('shared').num_subdirs == 1
+
+
+def test_index_merge_with_prefix_rebuilds_treestats(tempdir):
+    """The rebuild was an elif, so a prefixed merge kept counts for dropped duplicates."""
+    src1 = osp.join(tempdir, 's1.barecat')
+    src2 = osp.join(tempdir, 's2.barecat')
+    _build(src1, {'d/dup.bin': b'DD', 'd/one.bin': b'1'})
+    _build(src2, {'d/dup.bin': b'DD', 'd/two.bin': b'2'})
+
+    out = osp.join(tempdir, 'out.barecat')
+    with Barecat(out, readonly=False) as bc:
+        for src in (src1, src2):
+            bc.index.merge_from_other_barecat(src, ignore_duplicates=True, prefix='pfx')
+
+    with Barecat(out, readonly=True) as bc:
+        assert bc.index.verify_integrity()
+        info = bc.index.lookup_dir('pfx/d')
+        # dup.bin is stored once, so three files of 2 + 1 + 1 bytes
+        assert info.num_files_tree == 3
+        assert info.size_tree == 4
+
+
+# =============================================================================
