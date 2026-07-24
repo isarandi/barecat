@@ -364,11 +364,20 @@ def test_delete_nonexistent(archive):
 
 
 def test_delete_last_file_in_dir(archive):
-    """Delete the only file in a directory."""
+    """Delete the only file in a directory via dict interface cleans up empty parents."""
     with Barecat(archive, readonly=False) as bc:
         bc['dir/only.txt'] = b'alone'
         del bc['dir/only.txt']
-        # Directory should still exist but be empty
+        # Dict interface auto-cleans empty parent directories
+        assert not bc.isdir('dir')
+
+
+def test_delete_file_via_remove_keeps_dir(archive):
+    """Delete via filesystem interface (remove) preserves empty parent dirs."""
+    with Barecat(archive, readonly=False) as bc:
+        bc['dir/only.txt'] = b'alone'
+        bc.remove('dir/only.txt')
+        # Filesystem interface does NOT auto-clean empty dirs
         assert bc.listdir('dir') == []
 
 
@@ -831,10 +840,19 @@ def test_rmdir_nonexistent_raises(archive):
 
 
 def test_rmdir_after_deleting_files(archive):
-    """Remove directory after deleting all files."""
+    """Dict delete auto-cleans empty parent dirs, so rmdir is not needed."""
     with Barecat(archive, readonly=False) as bc:
         bc['dir/file.txt'] = b'content'
         del bc['dir/file.txt']
+        # Dict interface auto-cleaned the empty dir
+        assert not bc.index.isdir('dir')
+
+
+def test_rmdir_after_removing_files(archive):
+    """Remove directory after removing all files via filesystem interface."""
+    with Barecat(archive, readonly=False) as bc:
+        bc['dir/file.txt'] = b'content'
+        bc.remove('dir/file.txt')
         bc.rmdir('dir')
         assert not bc.index.isdir('dir')
 

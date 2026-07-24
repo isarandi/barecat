@@ -46,7 +46,7 @@ else:
         BarecatFileObject,
     )
     from .index import Index, normalize_path
-    from .paths import resolve_index_path
+    from .paths import get_parent, resolve_index_path
 
 logger = logging.getLogger(__name__)
 
@@ -308,10 +308,23 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             KeyError: 'file.txt'
 
         """
+        path = normalize_path(path)
         try:
             self.remove(path)
         except (FileNotFoundBarecatError, IsADirectoryBarecatError):
             raise BarecatKeyError(path)
+        self._cleanup_empty_parents(path)
+
+    def _cleanup_empty_parents(self, path):
+        """Remove empty parent directories after a file deletion (dict interface only)."""
+        parent = get_parent(path)
+        while parent != b'\x00' and parent != '':
+            di = self.index.lookup_dir(parent)
+            if di.num_files == 0 and di.num_subdirs == 0:
+                self.index.remove_empty_dir(parent)
+                parent = get_parent(parent)
+            else:
+                break
 
     # Filesystem-like API
     def open(
