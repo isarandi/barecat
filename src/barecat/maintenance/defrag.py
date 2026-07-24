@@ -7,6 +7,7 @@ import time
 from typing import TYPE_CHECKING
 
 from ..core.index import Order
+from ..exceptions import BarecatError
 from ..util.progbar import progressbar
 from ..io import copyfile as barecat_copyfile
 
@@ -22,9 +23,29 @@ class BarecatDefragger:
         self.readonly = bc.readonly
         self.shard_files = bc.sharder.shard_files
 
+    def _raise_if_oversize_files(self):
+        """Refuse to defrag when any file exceeds the shard size limit.
+
+        The packing logic relies on the invariant that every file fits within one
+        shard limit — that is what guarantees a moved file's new location never
+        overruns a not-yet-moved one. With the invariant violated (archives written
+        by older/buggy versions), the truncate steps would cut live data.
+        """
+        if self.shard_size_limit is None:
+            return
+        max_size = self.index.fetch_one('SELECT MAX(size) FROM files')[0] or 0
+        if max_size > self.shard_size_limit:
+            raise BarecatError(
+                f'Cannot defrag: a stored file of size {max_size} exceeds the shard size '
+                f'limit {self.shard_size_limit}. To proceed, raise the limit '
+                f'(bc.shard_size_limit = ...) or reshard with a larger shard size '
+                f'(barecat reshard -s ...), then defrag.'
+            )
+
     def defrag(self):
         if self.readonly:
             raise ValueError('Cannot defrag a read-only Barecat')
+        self._raise_if_oversize_files()
 
         new_shard = 0
         new_offset = 0
@@ -81,6 +102,7 @@ class BarecatDefragger:
         """
         if self.readonly:
             raise ValueError('Cannot defrag a read-only Barecat')
+        self._raise_if_oversize_files()
 
         new_shard = 0
         new_offset = 0
@@ -228,6 +250,7 @@ class BarecatDefragger:
         """
         if self.readonly:
             raise ValueError('Cannot defrag a read-only Barecat')
+        self._raise_if_oversize_files()
 
         start_time = time.monotonic()
         gaps = self.get_gaps()
