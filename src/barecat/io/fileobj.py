@@ -103,9 +103,7 @@ class BarecatFileObjectHelper:
 
         # Check readonly archive vs write mode
         if not readonly and self.bc.readonly:
-            raise ValueError(
-                f"Cannot open file '{path}' for writing: archive is read-only"
-            )
+            raise ValueError(f"Cannot open file '{path}' for writing: archive is read-only")
 
         # Read-only mode
         if readonly:

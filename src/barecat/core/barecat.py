@@ -1051,7 +1051,9 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         with self.open(finfo, 'rb') as f:
             crc32c = accumulate_crc32c(f)
         if finfo.crc32c is not None and crc32c != finfo.crc32c:
-            logger.warning('CRC32C mismatch for %s. Expected %s, got %s', finfo.path, finfo.crc32c, crc32c)
+            logger.warning(
+                'CRC32C mismatch for %s. Expected %s, got %s', finfo.path, finfo.crc32c, crc32c
+            )
             return False
         return True
 

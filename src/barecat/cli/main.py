@@ -673,10 +673,7 @@ def main():
                     print('Index integrity errors were found.', file=sys.stderr)
                     sys.exit(1)
                 total_size = _format_size(bc.total_size, human_readable=True)
-                print(
-                    f'Verified {bc.num_files} files ({total_size}), '
-                    f'all checksums OK.'
-                )
+                print(f'Verified {bc.num_files} files ({total_size}), ' f'all checksums OK.')
 
     elif args.command == 'defrag':
         readonly = args.dry_run

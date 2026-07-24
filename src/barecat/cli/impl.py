@@ -528,10 +528,7 @@ def read_index(path):
         stacklevel=2,
     )
     with barecat_.Index(path) as reader:
-        return {
-            f.path: (f.shard, f.offset, f.size)
-            for f in reader.iter_all_fileinfos()
-        }
+        return {f.path: (f.shard, f.offset, f.size) for f in reader.iter_all_fileinfos()}
 
 
 def iterate_zero_terminated(fileobj):

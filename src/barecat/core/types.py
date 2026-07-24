@@ -195,9 +195,7 @@ class BarecatFileInfo(BarecatEntryInfo):
         return True
 
     def __repr__(self):
-        return (
-            f"BarecatFileInfo('{self.path}', {self.size} bytes, shard={self.shard})"
-        )
+        return f"BarecatFileInfo('{self.path}', {self.size} bytes, shard={self.shard})"
 
 
 class BarecatDirInfo(BarecatEntryInfo):
