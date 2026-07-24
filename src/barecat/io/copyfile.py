@@ -10,8 +10,8 @@ Methods tried in order of preference:
 For CRC32c variants, must use buffered copy since data needs to pass through user space.
 """
 
+import ctypes as _ctypes
 from enum import Enum, auto
-import ctypes
 import io
 import os
 import stat
@@ -25,13 +25,24 @@ __all__ = [
     'write_zeroes',
 ]
 
-# Kernel syscall availability (checked once at import)
-_HAS_SPLICE = hasattr(os, 'splice')
-_HAS_SENDFILE = hasattr(os, 'sendfile')
+# Kernel syscall availability (always present on Linux + Python 3.9+)
+_HAS_SPLICE = True
+_HAS_SENDFILE = True
 
 # Linux fallocate(2) mode flags
 # See: man 2 fallocate, /usr/include/linux/falloc.h
 FALLOC_FL_ZERO_RANGE = 0x10  # Zero-fill and allocate space without writing data
+
+_libc_fallocate = _ctypes.CDLL('libc.so.6', use_errno=True).fallocate
+_libc_fallocate.argtypes = [_ctypes.c_int, _ctypes.c_int, _ctypes.c_longlong, _ctypes.c_longlong]
+_libc_fallocate.restype = _ctypes.c_int
+
+
+def _fallocate(fd, mode, offset, length):
+    if _libc_fallocate(fd, mode, offset, length) != 0:
+        errno = _ctypes.get_errno()
+        raise OSError(errno, os.strerror(errno))
+
 
 # Default buffer size for user-space copies (64 KB)
 _DEFAULT_BUFSIZE = 64 * 1024
@@ -155,15 +166,15 @@ def write_zeroes(file, n, bufsize=_DEFAULT_BUFSIZE):
     if n <= 0:
         return 0
 
-    # Try fallocate with ZERO_RANGE (Linux only, fast)
+    # Try fallocate with ZERO_RANGE (fast, kernel-level)
     try:
         fd = file.fileno()
         file.flush()
         offset = file.tell()
-        os.fallocate(fd, FALLOC_FL_ZERO_RANGE, offset, n)
+        _fallocate(fd, FALLOC_FL_ZERO_RANGE, offset, n)
         file.seek(offset + n)
         return n
-    except (OSError, AttributeError, io.UnsupportedOperation):
+    except OSError:
         pass
 
     # Fallback: write actual zeroes
@@ -492,43 +503,40 @@ def _copy_splice(ctx):
 # File descriptor utilities
 # =============================================================================
 
-_copy_file_range = None
-
 if hasattr(os, 'copy_file_range'):
+    # Python 3.12+
     _copy_file_range = os.copy_file_range
 else:
-    try:
-        _libc = ctypes.CDLL('libc.so.6', use_errno=True)
-        _cfr = _libc.copy_file_range
-        _cfr.argtypes = [
-            ctypes.c_int,
-            ctypes.POINTER(ctypes.c_longlong),
-            ctypes.c_int,
-            ctypes.POINTER(ctypes.c_longlong),
-            ctypes.c_size_t,
-            ctypes.c_uint,
-        ]
-        _cfr.restype = ctypes.c_ssize_t
+    # Python < 3.12: call the kernel syscall via ctypes (available since Linux 4.5)
+    _cfr = _ctypes.CDLL('libc.so.6', use_errno=True).copy_file_range
+    _cfr.argtypes = [
+        _ctypes.c_int,
+        _ctypes.POINTER(_ctypes.c_longlong),
+        _ctypes.c_int,
+        _ctypes.POINTER(_ctypes.c_longlong),
+        _ctypes.c_size_t,
+        _ctypes.c_uint,
+    ]
+    _cfr.restype = _ctypes.c_ssize_t
 
-        def _copy_file_range(src_fd, dst_fd, count, offset_src=None, offset_dst=None):
-            off_in = ctypes.c_longlong(offset_src) if offset_src is not None else None
-            off_out = ctypes.c_longlong(offset_dst) if offset_dst is not None else None
-            result = _cfr(
-                src_fd,
-                ctypes.byref(off_in) if off_in is not None else None,
-                dst_fd,
-                ctypes.byref(off_out) if off_out is not None else None,
-                count,
-                0,
-            )
-            if result < 0:
-                errno = ctypes.get_errno()
-                raise OSError(errno, os.strerror(errno))
-            return result
-    except (OSError, AttributeError):
-        pass
+    def _copy_file_range(src_fd, dst_fd, count, offset_src=None, offset_dst=None):
+        off_in = _ctypes.c_longlong(offset_src) if offset_src is not None else None
+        off_out = _ctypes.c_longlong(offset_dst) if offset_dst is not None else None
+        result = _cfr(
+            src_fd,
+            _ctypes.byref(off_in) if off_in is not None else None,
+            dst_fd,
+            _ctypes.byref(off_out) if off_out is not None else None,
+            count,
+            0,
+        )
+        if result < 0:
+            errno = _ctypes.get_errno()
+            raise OSError(errno, os.strerror(errno))
+        return result
 
-_HAS_COPY_FILE_RANGE = _copy_file_range is not None
+
+_HAS_COPY_FILE_RANGE = True
 
 
 def _same_file(fd1, fd2):
