@@ -5,6 +5,7 @@ import os.path as osp
 from typing import Optional
 
 import barecat
+from barecat.exceptions import FileNotFoundBarecatError
 
 
 class BarecatBrowser:
@@ -29,7 +30,7 @@ class BarecatBrowser:
         """Load directory entries for current directory."""
         try:
             names = list(self.bc.listdir(self.cwd))
-        except KeyError:
+        except (KeyError, FileNotFoundBarecatError):
             names = []
 
         # Separate dirs and files, sort each
@@ -68,7 +69,7 @@ class BarecatBrowser:
         parent = osp.dirname(self.cwd)
         try:
             names = list(self.bc.listdir(parent))
-        except KeyError:
+        except (KeyError, FileNotFoundBarecatError):
             return []
 
         entries = []
@@ -106,7 +107,7 @@ class BarecatBrowser:
                     self.preview_lines = sorted(dirs) + sorted(files)
                     if not self.preview_lines:
                         self.preview_lines = ['[Empty directory]']
-                except KeyError:
+                except (KeyError, FileNotFoundBarecatError):
                     self.preview_lines = ['[Cannot read directory]']
             return
 
@@ -147,7 +148,7 @@ class BarecatBrowser:
                     self.preview_lines.append('')
                     self.preview_lines.append(f'[EOF - {self._format_size(file_size)}]')
 
-        except KeyError:
+        except (KeyError, FileNotFoundBarecatError):
             self.preview_lines = ['[Cannot read file]']
 
     def _format_size(self, size: int) -> str:
@@ -246,7 +247,7 @@ class BarecatBrowser:
                 try:
                     info = self.bc.index.lookup_file(selected)
                     status += f' | {self._format_size(info.size)}'
-                except KeyError:
+                except (KeyError, FileNotFoundBarecatError):
                     pass
         status += ' | q:quit h/l:nav j/k:move'
         try:

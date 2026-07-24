@@ -4,6 +4,7 @@ import curses
 import os.path as osp
 
 import barecat
+from barecat.exceptions import FileNotFoundBarecatError
 
 
 class BarecatDu:
@@ -52,7 +53,7 @@ class BarecatDu:
         try:
             dinfo = self.bc.index.lookup_dir(self.cwd)
             return dinfo.size_tree
-        except KeyError:
+        except (KeyError, FileNotFoundBarecatError):
             return sum(size for _, size, _, _ in self.entries)
 
     def _get_total_count(self) -> int:
@@ -60,7 +61,7 @@ class BarecatDu:
         try:
             dinfo = self.bc.index.lookup_dir(self.cwd)
             return dinfo.num_files_tree
-        except KeyError:
+        except (KeyError, FileNotFoundBarecatError):
             return sum(count for _, _, count, _ in self.entries)
 
     def _format_size(self, size: int) -> str:

@@ -11,7 +11,8 @@ class BarecatError(Exception):
 class FileExistsBarecatError(BarecatError):
     """Exception raised when trying to create a file that already exists
 
-    Analogous to FileExistsError
+    Fills the role of FileExistsError, but deliberately does not inherit from it —
+    catch this class (or BarecatError), not the builtin.
 
     Args:
         path: path to the file that already exists
@@ -24,7 +25,8 @@ class FileExistsBarecatError(BarecatError):
 class FileNotFoundBarecatError(BarecatError):
     """Exception raised when trying to access a file that does not exist
 
-    Analogous to FileNotFoundError
+    Fills the role of FileNotFoundError, but deliberately does not inherit from it —
+    catch this class (or BarecatError), not the builtin.
 
     Args:
         path: path to the file that does not exist
