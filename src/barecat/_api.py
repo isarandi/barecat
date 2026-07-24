@@ -118,14 +118,26 @@ def get_cached_reader(path, auto_codec=None):
             stacklevel=2,
         )
 
-    # Thread-local LRU cache
-    local = multiprocessing_utils.local()
-    if not hasattr(local, '_cache'):
+    return _cached_reader_open(path, auto_codec)
 
-        @functools.lru_cache()
-        def _open(path, auto_codec):
-            return Barecat(path, readonly=True, auto_codec=auto_codec)
 
-        local._cache = _open
+def _threadlocal_decorate(decorator):
+    import multiprocessing_utils
 
-    return local._cache(path, auto_codec)
+    def my_decorator(fun):
+        local = multiprocessing_utils.local()
+
+        @functools.wraps(fun)
+        def wrapper(*args, **kwargs):
+            if not hasattr(local, 'fn'):
+                local.fn = decorator(fun)
+            return local.fn(*args, **kwargs)
+
+        return wrapper
+
+    return my_decorator
+
+
+@_threadlocal_decorate(functools.lru_cache())
+def _cached_reader_open(path, auto_codec=True):
+    return Barecat(path, readonly=True, auto_codec=auto_codec)
