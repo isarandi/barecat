@@ -8,6 +8,7 @@ import barecat_cython
 from ..core.types import SCHEMA_VERSION_MAJOR, SCHEMA_VERSION_MINOR
 from ..core.paths import resolve_index_path
 from ..util.consumed_threadpool import ConsumedThreadPool
+from ..exceptions import BarecatError
 from ..util.misc import sqlite_uri
 from ..util.progbar import progressbar
 
@@ -77,6 +78,17 @@ def upgrade(path: str, workers: int = 8, preserve_backup: bool = True):
         )
         if db_minor in (1, 2):
             upgrade_0_x_to_0_3(path)
+        else:
+            # A config row that literally says 0.0 used to fall through every branch
+            # and still print "Upgrade complete", leaving the archive untouched. A
+            # missing config table is a different case, reported as (major-1, 0) by
+            # get_schema_version and handled by the unversioned path above.
+            raise BarecatError(
+                f'No upgrade path from schema version {db_major}.{db_minor} to '
+                f'{SCHEMA_VERSION_MAJOR}.{SCHEMA_VERSION_MINOR}. If this archive '
+                f'predates schema versioning, remove the config row so it is treated '
+                f'as unversioned, which runs the full migration.'
+            )
 
     # Rename from old naming format (-sqlite-index) to new format (.barecat IS the index)
     final_dbase_path = resolve_index_path(path)
