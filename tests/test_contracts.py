@@ -610,3 +610,17 @@ def test_tar_conversion_warns_about_dropped_links(tempdir):
     assert any('symlink/hardlink' in str(c.message) for c in caught)
 
 
+def test_entry_info_defaults_and_epoch_zero_mtime():
+    """path=None passes through, and mtime_ns=0 is a real timestamp (item 60)."""
+    from barecat.core.types import BarecatDirInfo, BarecatFileInfo
+
+    finfo = BarecatFileInfo()
+    assert finfo.path is None
+    finfo.path = 'a/b.txt'
+    assert finfo.path == 'a/b.txt'
+
+    finfo.mtime_ns = 0
+    assert finfo.mtime_dt is not None
+
+    # num_subdirs is no longer derived from st_nlink, which is 1 on btrfs/overlayfs
+    assert BarecatDirInfo().num_subdirs is None

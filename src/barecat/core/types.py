@@ -36,7 +36,7 @@ class BarecatEntryInfo:
         gid: Optional[int] = None,
         mtime_ns: Optional[Union[int, datetime]] = None,
     ):
-        self._path = normalize_path(path)
+        self._path = None if path is None else normalize_path(path)
         self.mode = mode
         """File mode, i.e., permissions."""
 
@@ -59,12 +59,15 @@ class BarecatEntryInfo:
 
     @path.setter
     def path(self, value):
-        self._path = normalize_path(value)
+        # None passes through as "not set yet", which is what the default argument
+        # documents; '' would mean the root directory instead, a different thing.
+        self._path = None if value is None else normalize_path(value)
 
     @property
     def mtime_dt(self) -> Optional[datetime]:
         """Last modification time as a datetime object."""
-        return ns_to_datetime(self.mtime_ns) if self.mtime_ns else None
+        # `if self.mtime_ns` would drop a legitimate epoch-0 timestamp
+        return ns_to_datetime(self.mtime_ns) if self.mtime_ns is not None else None
 
     @mtime_dt.setter
     def mtime_dt(self, dt: datetime):
@@ -275,7 +278,10 @@ class BarecatDirInfo(BarecatEntryInfo):
             s: stat result object to fill the metadata from
         """
         super().fill_from_statresult(s)
-        self.num_subdirs = s.st_nlink - 2
+        # num_subdirs is deliberately left as is: st_nlink - 2 assumes a filesystem
+        # that counts '.' and each subdirectory's '..', which btrfs and overlayfs do
+        # not -- they report st_nlink == 1 and the formula yields -1. add_dir
+        # recomputes the real count anyway.
 
     def isdir(self) -> bool:
         return True
