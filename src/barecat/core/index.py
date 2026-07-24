@@ -1,5 +1,4 @@
 import contextlib
-import copy
 import itertools
 import logging
 import os
@@ -1426,57 +1425,6 @@ class Index(AbstractContextManager):
         )
         if self.cursor.rowcount == 0:
             raise FileNotFoundBarecatError(f'Path {path} not found in index')
-
-    def find_space(self, path: Union[BarecatFileInfo, str], size: int):
-        finfo = self._as_fileinfo(path)
-        requested_space = size - finfo.size
-        if requested_space <= 0:
-            return finfo
-
-        # need to check if there is space in the shard
-        result = self.fetch_one(
-            """
-            SELECT offset FROM files
-            WHERE shard = :shard AND offset > :offset
-            ORDER BY offset LIMIT 1
-            """,
-            dict(shard=finfo.shard, offset=finfo.offset),
-        )
-        space_available = (
-            result['offset'] - finfo.offset
-            if result is not None
-            else self.shard_size_limit - finfo.offset
-        )
-        if space_available >= requested_space:
-            return finfo
-
-        # find first hole large enough:
-        result = self.fetch_one(
-            """
-            SELECT shard, gap_offset FROM (
-                SELECT
-                    shard,
-                    (offset + size) AS gap_offset,
-                    LEAD(offset, 1, :shard_size_limit) OVER (PARTITION BY shard ORDER BY offset)
-                    AS gap_end
-                FROM files)
-            WHERE gap_end - gap_offset > :requested_size
-            ORDER BY shard, gap_offset
-            LIMIT 1
-            """,
-            dict(requested_size=size - finfo.size, shard_size_limit=self.shard_size_limit),
-        )
-        if result is not None:
-            new_finfo = copy.copy(finfo)
-            new_finfo.shard = result['shard']
-            new_finfo.offset = result['gap_offset']
-            return new_finfo
-
-        # Must start new shard
-        new_finfo = copy.copy(finfo)
-        new_finfo.shard = self.num_used_shards
-        new_finfo.offset = 0
-        return new_finfo
 
     def verify_integrity(self):
         """Verify the integrity of the index.

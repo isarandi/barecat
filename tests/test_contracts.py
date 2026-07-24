@@ -404,3 +404,14 @@ def test_update_file_ignores_the_path_of_new_item(archive):
         assert 'elsewhere.txt' not in bc
 
 
+# =============================================================================
+# find_space removed (audit item 20)
+# =============================================================================
+
+
+def test_find_space_is_gone(archive):
+    """It answered with the size delta instead of the full size, corrupting neighbors."""
+    with Barecat(archive, readonly=False) as bc:
+        assert not hasattr(bc.index, 'find_space')
+
+
