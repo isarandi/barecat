@@ -1914,14 +1914,31 @@ class Index(AbstractContextManager):
         finally:
             self.cursor.execute(f'DETACH DATABASE {name}')
 
-    def close(self):
-        """Close the index."""
+    def close(self, commit: bool = True):
+        """Close the index.
+
+        Args:
+            commit: If True (default), commit pending changes; if False, roll them
+                back to the last commit boundary (used on exception exits so partial
+                bulk work is not persisted).
+        """
         if self.is_closed:
             return
         self.cursor.close()
         if not self.readonly:
-            self.conn.commit()
-            self.conn.execute('PRAGMA optimize')
+            if commit:
+                try:
+                    self.conn.commit()
+                except sqlite3.IntegrityError as e:
+                    self.conn.rollback()
+                    self.conn.close()
+                    self.is_closed = True
+                    raise BarecatIntegrityError(
+                        f'Deferred constraint check failed while committing on close: {e}'
+                    ) from e
+                self.conn.execute('PRAGMA optimize')
+            else:
+                self.conn.rollback()
         self.conn.close()
         self.is_closed = True
 
@@ -1934,8 +1951,8 @@ class Index(AbstractContextManager):
             self.conn.execute('PRAGMA optimize')
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit the context manager."""
-        self.close()
+        """Exit the context manager, rolling back instead of committing on exception."""
+        self.close(commit=exc_type is None)
 
     # This can cause issues when multi-threading
     # def __del__(self):

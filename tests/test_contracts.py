@@ -214,6 +214,27 @@ def test_deferred_restrict_delete_pin(archive):
         assert bc.verify_integrity()
 
 
+def test_exception_exit_rolls_back_uncommitted_work(archive):
+    """An exception inside `with Barecat(...)` discards pending index changes."""
+    with Barecat(archive, readonly=False) as bc:
+        bc['committed.bin'] = b'1'
+    with pytest.raises(RuntimeError):
+        with Barecat(archive, readonly=False) as bc:
+            bc['pending.bin'] = b'2'
+            raise RuntimeError('abort mid-ingest')
+    with Barecat(archive, readonly=True) as bc:
+        assert 'committed.bin' in bc
+        assert 'pending.bin' not in bc
+        assert bc.verify_integrity()
+
+
+def test_clean_exit_commits(archive):
+    with Barecat(archive, readonly=False) as bc:
+        bc['f.bin'] = b'x'
+    with Barecat(archive, readonly=True) as bc:
+        assert bc['f.bin'] == b'x'
+
+
 # =============================================================================
 # Repeated bulk operations (audit item 17)
 # =============================================================================

@@ -1226,9 +1226,14 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         else:
             return defragger.defrag()
 
-    def close(self):
-        """Close the Barecat archive."""
-        self._index_storage.close()
+    def close(self, commit: bool = True):
+        """Close the Barecat archive.
+
+        Args:
+            commit: If True (default), commit pending index changes; if False, roll
+                them back to the last commit boundary.
+        """
+        self._index_storage.close(commit=commit)
         self.sharder.close()
 
     def __repr__(self):
@@ -1240,5 +1245,11 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             return f"Barecat('{self.path}', closed)"
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit a context manager."""
-        self.close()
+        """Exit a context manager.
+
+        On a clean exit, pending index changes are committed; if an exception is
+        propagating, they are rolled back to the last commit boundary instead, so an
+        aborted bulk operation does not persist partial work (shard bytes already
+        written for the discarded rows remain as untracked space, never as live data).
+        """
+        self.close(commit=exc_type is None)

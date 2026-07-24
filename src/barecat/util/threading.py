@@ -30,13 +30,23 @@ class ThreadLocalStorage:
             self._local.value = factory()
             return self._local.value
 
-    def close(self):
-        """Close and clear the stored value (current thread only if threadsafe)."""
+    def close(self, *args, **kwargs):
+        """Close and clear the stored value (current thread only if threadsafe).
+
+        Extra arguments are forwarded to the value's close() method.
+        """
         try:
-            self._local.value.close()
+            value = self._local.value
+        except AttributeError:
+            return
+        value.close(*args, **kwargs)
+        try:
             del self._local.value
         except AttributeError:
-            pass
+            # multiprocessing_utils' Local has no __delattr__, so the attribute lives
+            # on its inner threading.local; delete it there so a later get() creates
+            # a fresh value instead of returning the closed one.
+            del self._local._local.value
 
 
 def get_local(threadsafe: bool):
