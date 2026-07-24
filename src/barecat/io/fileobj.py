@@ -109,6 +109,17 @@ class BarecatFileObjectHelper:
         if readonly:
             return sharder.open_from_address(finfo.shard, finfo.offset, finfo.size, 'rb')
 
+        # On an append-only archive, shard fds are opened with O_APPEND, so pwrite into
+        # an existing region silently lands at the shard end instead. Refuse any open
+        # that could rewrite an existing region ('r+'/'a' on an existing file); pure
+        # spillover objects ('w'/'x', or truncating an existing entry) reintegrate via
+        # sharder.add, a legitimate append, and stay allowed.
+        if not readonly and self.bc.append_only and file_exists and not truncating:
+            raise ValueError(
+                f"Cannot open existing file '{path}' for writing on an append-only archive; "
+                f"only creating new files or truncating ('w'/'x' modes) is supported"
+            )
+
         # Write modes
         def on_close(fileobj: BarecatReadWriteFileObject):
             self._reintegrate_fileobj(

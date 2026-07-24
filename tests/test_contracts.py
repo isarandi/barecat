@@ -168,7 +168,6 @@ def test_update_file_short_source_stores_partial_coherently(archive):
 # =============================================================================
 
 
-@pytest.mark.xfail(strict=True, reason='audit item 7: r+ writes on append_only go to junk')
 def test_append_only_refuses_rplus_open(archive):
     with Barecat(archive, readonly=False, append_only=True) as bc:
         bc['f.bin'] = b'0123456789'
