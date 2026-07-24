@@ -415,3 +415,28 @@ def test_find_space_is_gone(archive):
         assert not hasattr(bc.index, 'find_space')
 
 
+# =============================================================================
+# Archive paths with URI-reserved characters (audit items 40 + 66)
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    'name',
+    ['q?mark.barecat', 'ha#sh.barecat', 'per%cent.barecat', "quo'te.barecat",
+     'sp ace.barecat', 'amp&and.barecat'],
+)
+def test_archive_path_with_uri_reserved_characters(tempdir, name):
+    """SQLite reads a URI filename as a URI, so '?', '#' and '%' need encoding."""
+    path = osp.join(tempdir, name)
+    with Barecat(path, readonly=False) as bc:
+        bc['a.txt'] = b'hello'
+        bc['d/b.txt'] = b'world'
+
+    assert osp.exists(path), 'the index was created somewhere other than the given path'
+
+    with Barecat(path, readonly=True) as bc:
+        assert bc['a.txt'] == b'hello'
+        assert bc['d/b.txt'] == b'world'
+        assert bc.index.verify_integrity()
+
+

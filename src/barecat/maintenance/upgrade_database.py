@@ -8,6 +8,7 @@ import barecat_cython
 from ..core.types import SCHEMA_VERSION_MAJOR, SCHEMA_VERSION_MINOR
 from ..core.paths import resolve_index_path
 from ..util.consumed_threadpool import ConsumedThreadPool
+from ..util.misc import sqlite_uri
 from ..util.progbar import progressbar
 
 
@@ -93,7 +94,7 @@ def upgrade(path: str, workers: int = 8, preserve_backup: bool = True):
 def get_schema_version(dbase_path: str) -> tuple:
     """Get the schema version from a barecat database."""
     try:
-        with sqlite3.connect(f'file:{dbase_path}?mode=ro', uri=True) as conn:
+        with sqlite3.connect(sqlite_uri(dbase_path, 'ro'), uri=True) as conn:
             c = conn.cursor()
             c.execute("SELECT value_int FROM config WHERE key='schema_version_major'")
             row = c.fetchone()
@@ -141,7 +142,7 @@ def upgrade_from_unversioned(path: str, backup_path: str = None):
         c = index_out.cursor
         c.execute('COMMIT')
         c.execute('PRAGMA foreign_keys=OFF')
-        c.execute(f'ATTACH DATABASE "file:{backup_path}?mode=ro" AS source')
+        c.execute('ATTACH DATABASE ? AS source', (sqlite_uri(backup_path, 'ro'),))
         print('Migrating dir metadata...')
         c.execute(
             """
@@ -190,7 +191,7 @@ def update_crc32c(path_out: str, workers=8):
                 )
 
         print('Updating crc32c in the barecat index...')
-        c.execute(f'ATTACH DATABASE "file:{path_newcrc_temp}?mode=ro" AS newdb')
+        c.execute('ATTACH DATABASE ? AS newdb', (sqlite_uri(path_newcrc_temp, 'ro'),))
         c.execute(
             """
             UPDATE files

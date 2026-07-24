@@ -11,6 +11,7 @@ Usage:
 import os
 import sys
 import barecat
+from ..util.misc import sqlite_uri
 
 
 def main():
@@ -38,7 +39,7 @@ def upgrade_index(db_path: str):
         index.no_triggers(),
     ):
         print('Step 2: Copying files from simple index...')
-        index.cursor.execute(f"ATTACH DATABASE 'file:{db_path}?mode=ro' AS sourcedb")
+        index.cursor.execute('ATTACH DATABASE ? AS sourcedb', (sqlite_uri(db_path, 'ro'),))
         index.cursor.execute(
             """
             INSERT INTO files (path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns)

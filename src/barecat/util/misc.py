@@ -12,6 +12,32 @@ def read_file(input_path, mode='r'):
         return f.read()
 
 
+# SQLite's default variable limit is 32766 (999 on builds older than 3.32); stay
+# well under it so an IN-list never trips OperationalError: too many SQL variables.
+SQL_VARIABLE_CHUNK = 900
+
+
+def sqlite_uri(path, mode=None):
+    """Build a SQLite URI filename for a filesystem path.
+
+    SQLite parses a URI filename as a URI, so '?' begins the query part, '#' a
+    fragment and '%' an escape sequence: a path containing any of the three names
+    a different file, or fails to open, unless it is percent-encoded. Only those
+    three are encoded — encoding anything else would equally change the filename.
+    """
+    p = os.fspath(path)
+    # '%' first, or the escapes introduced below would themselves be escaped
+    for ch, escape in (('%', '%25'), ('?', '%3f'), ('#', '%23')):
+        p = p.replace(ch, escape)
+    return f'file:{p}?mode={mode}' if mode is not None else f'file:{p}'
+
+
+def quote_sql_identifier(name):
+    """Quote an identifier (schema/table name) for interpolation into SQL."""
+    escaped = name.replace('"', '""')
+    return f'"{escaped}"'
+
+
 def find_shard_paths(path):
     """Find the shard files of an archive, sorted numerically.
 

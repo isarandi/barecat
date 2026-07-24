@@ -3,6 +3,7 @@ import os.path
 
 import barecat
 from ..core.paths import resolve_index_path
+from ..util.misc import sqlite_uri
 
 
 def main():
@@ -23,7 +24,7 @@ def upgrade_schema(path_in: str, path_out: str):
     with barecat.Index(path_out, readonly=False) as index_out:
         c = index_out.cursor
         c.execute('COMMIT')
-        c.execute(f'ATTACH DATABASE "file:{path_in_resolved}?mode=ro" AS source')
+        c.execute('ATTACH DATABASE ? AS source', (sqlite_uri(path_in_resolved, 'ro'),))
 
         with index_out.no_triggers():
             print('Migrating dir metadata...')

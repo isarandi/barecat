@@ -23,7 +23,7 @@ from ..exceptions import (
     IsADirectoryBarecatError,
     NotADirectoryBarecatError,
 )
-from ..util.misc import datetime_to_ns
+from ..util.misc import datetime_to_ns, quote_sql_identifier, sqlite_uri
 from ..core.paths import get_parent, normalize_path
 from ..util.glob_helper import GlobHelper
 from ..maintenance.merge import IndexMergeHelper
@@ -65,7 +65,7 @@ class Index(AbstractContextManager):
             else:
                 mode = 'rwc'
             self.conn = sqlite3.connect(
-                f'file:{path}?mode={mode}',
+                sqlite_uri(path, mode),
                 uri=True,
                 check_same_thread=not self.readonly,
                 cached_statements=1024,
@@ -1883,7 +1883,11 @@ class Index(AbstractContextManager):
         checks fire here). Rolls back instead if the body raised.
         """
         mode = 'ro' if readonly else 'rw'
-        self.cursor.execute(f"ATTACH DATABASE 'file:{path}?mode={mode}' AS {name}")
+        # Bind the URI rather than interpolate it: a path containing a quote would
+        # otherwise break out of the SQL string literal.
+        self.cursor.execute(
+            f'ATTACH DATABASE ? AS {quote_sql_identifier(name)}', (sqlite_uri(path, mode),)
+        )
         try:
             yield
             try:
