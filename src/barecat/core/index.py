@@ -23,7 +23,13 @@ from ..exceptions import (
     IsADirectoryBarecatError,
     NotADirectoryBarecatError,
 )
-from ..util.misc import datetime_to_ns, quote_sql_identifier, sqlite_uri
+from ..util.misc import (
+    SQL_VARIABLE_CHUNK,
+    chunked,
+    datetime_to_ns,
+    quote_sql_identifier,
+    sqlite_uri,
+)
 from ..core.paths import get_parent, normalize_path
 from ..util.glob_helper import GlobHelper
 from ..maintenance.merge import IndexMergeHelper
@@ -248,13 +254,18 @@ class Index(AbstractContextManager):
         if not paths:
             return []
         normalized_paths = [normalize_path(p) for p in paths]
-        placeholders = ','.join('?' for _ in normalized_paths)
-        query = f"""
-            SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns
-            FROM files WHERE path IN ({placeholders})
-        """
-        finfos = self.fetch_all(query, tuple(normalized_paths), rowcls=BarecatFileInfo)
-        found_files = {finfo.path: finfo for finfo in finfos}
+        # One placeholder per path would exceed SQLite's variable limit for large
+        # lookups; the results are keyed by path and reordered below, so splitting
+        # the IN-list changes neither the order nor the handling of duplicates.
+        found_files = {}
+        for chunk in chunked(normalized_paths, SQL_VARIABLE_CHUNK):
+            placeholders = ','.join('?' for _ in chunk)
+            query = f"""
+                SELECT path, shard, offset, size, crc32c, mode, uid, gid, mtime_ns
+                FROM files WHERE path IN ({placeholders})
+            """
+            for finfo in self.fetch_all(query, tuple(chunk), rowcls=BarecatFileInfo):
+                found_files[finfo.path] = finfo
         results = []
         for path in normalized_paths:
             try:
@@ -1993,6 +2004,8 @@ class Fetcher:
 
     def fetch_many(self, query, params=(), cursor=None, bufsize=None, rowcls=None):
         cursor = self.cursor if cursor is None else cursor
+        # fetchmany(None) is a TypeError, so fall back like fetch_iter does
+        bufsize = bufsize if bufsize is not None else self.bufsize
         cursor.row_factory = rowcls.row_factory if rowcls is not None else self.row_factory
         cursor.execute(query, params)
         return cursor.fetchmany(bufsize)

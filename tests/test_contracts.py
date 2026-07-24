@@ -440,3 +440,25 @@ def test_archive_path_with_uri_reserved_characters(tempdir, name):
         assert bc.index.verify_integrity()
 
 
+def test_lookup_files_beyond_the_sql_variable_limit(archive):
+    """One placeholder per path used to exceed SQLite's variable limit (item 41)."""
+    paths = [f'f{i:05d}.bin' for i in range(2500)]
+    with Barecat(archive, readonly=False) as bc:
+        for p in paths:
+            bc[p] = b'x'
+
+    with Barecat(archive, readonly=True) as bc:
+        assert [i.path for i in bc.index.lookup_files(paths)] == paths
+        # Chunking must not disturb ordering or duplicate handling
+        repeated = ['f00001.bin', 'f00001.bin', 'f00000.bin']
+        assert [i.path for i in bc.index.lookup_files(repeated)] == repeated
+
+
+def test_fetch_many_without_explicit_bufsize(archive):
+    """fetchmany(None) is a TypeError; fetch_many must fall back like fetch_iter (item 39)."""
+    with Barecat(archive, readonly=False) as bc:
+        bc['a.txt'] = b'x'
+        rows = bc.index.fetch_many('SELECT path FROM files')
+        assert [r['path'] for r in rows] == ['a.txt']
+
+
