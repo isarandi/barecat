@@ -80,6 +80,12 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         allow_writing_symlinked_shard: If True, allow writing to a shard file that is a symlink.
             Setting it to False is recommended, since changing the contents of a symlinked shard
             will bring the original index database out of sync with the actual shard contents.
+        wal: If True, use WAL (Write-Ahead Logging) journal mode for the SQLite database.
+            This provides better read concurrency but uses slightly more disk space.
+        readonly_is_immutable: If True, inform SQLite that the database will not be modified by
+            any process during the lifetime of this connection. This enables aggressive caching
+            and can improve read performance on network filesystems. Only safe if the database
+            truly will not change while open.
     """
 
     def __init__(

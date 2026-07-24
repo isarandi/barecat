@@ -133,7 +133,7 @@ For multi-process data loading, use ``threadsafe=True``:
            # threadsafe=True gives each worker its own file handles
            self.bc = barecat.Barecat(archive_path, threadsafe=True)
            self.transform = transform
-           self.paths = list(self.bc.index.iter_all_paths())
+           self.paths = list(self.bc.index.iter_all_filepaths())
 
        # ... rest same as above
 
@@ -167,7 +167,7 @@ Using with TensorFlow
 
    def make_dataset(archive_path):
        bc = barecat.Barecat(archive_path, threadsafe=True)
-       paths = list(bc.index.iter_all_paths())
+       paths = list(bc.index.iter_all_filepaths())
 
        def generator():
            for path in paths:

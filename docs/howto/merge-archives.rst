@@ -119,7 +119,7 @@ Consolidating Daily Uploads
    barecat create dataset.barecat /data/day1/
 
    # Each day, append new data
-   barecat merge -o dataset.barecat -a /data/day2/
+   barecat add dataset.barecat /data/day2/
    barecat merge -o dataset.barecat -a new_batch.tar.gz
 
 Combining Training Splits

@@ -6,16 +6,21 @@ This is the reference documentation for barecat's Python API.
 Barecat Class
 -------------
 
-.. py:class:: barecat.Barecat(path, readonly=True, overwrite=False, shard_size_limit=None, threadsafe=False, auto_codec=False)
+.. py:class:: barecat.Barecat(path, readonly=True, overwrite=False, shard_size_limit=None, threadsafe=False, auto_codec=False, exist_ok=True, append_only=False, wal=False, readonly_is_immutable=False, allow_writing_symlinked_shard=False)
 
    Main class for reading and writing barecat archives.
 
-   :param str path: Path to the archive (without suffix).
+   :param str path: Path to the archive (e.g., ``'data.barecat'``).
    :param bool readonly: Open in read-only mode. Default: True.
    :param bool overwrite: Delete existing archive if it exists. Default: False.
    :param int shard_size_limit: Maximum size per shard file in bytes. Default: unlimited.
    :param bool threadsafe: Use thread-local storage for connections. Required for multi-process DataLoader. Default: False.
    :param bool auto_codec: **Deprecated.** Use :class:`DecodedView` instead. Will be removed in 1.0.
+   :param bool exist_ok: Don't error if the archive already exists when creating. Default: True.
+   :param bool append_only: Only allow appending (no deletions or overwrites). Default: False.
+   :param bool wal: Use WAL journal mode for the SQLite database. Default: False.
+   :param bool readonly_is_immutable: Inform SQLite the database will not change while open. Enables aggressive caching, useful for network filesystems. Default: False.
+   :param bool allow_writing_symlinked_shard: Allow writing to symlinked shard files. Default: False.
 
    **Context Manager**
 
@@ -151,6 +156,54 @@ Barecat Class
    .. py:attribute:: shard_size_limit
 
       Maximum shard size in bytes.
+
+   .. py:method:: scandir(path='')
+
+      List directory contents as BarecatEntryInfo objects (like os.scandir).
+
+   .. py:method:: read(item)
+
+      Read file contents given a BarecatFileInfo or path.
+
+   .. py:method:: readinto(item, buffer)
+
+      Read file contents into a pre-allocated buffer.
+
+   .. py:method:: rename(old_path, new_path)
+
+      Rename a file or directory within the archive.
+
+   .. py:method:: rmdir(path)
+
+      Remove an empty directory.
+
+   .. py:method:: rmtree(path)
+
+      Remove a directory and all its contents recursively.
+
+   .. py:method:: mkdir(path)
+
+      Create a directory in the archive.
+
+   .. py:method:: files()
+
+      Iterate over all file paths (like ``os.listdir`` for files only).
+
+   .. py:method:: dirs()
+
+      Iterate over all directory paths.
+
+   .. py:method:: globfiles(pattern, recursive=False)
+
+      Like :meth:`glob` but returns only files (not directories).
+
+   .. py:method:: iglob(pattern, recursive=False)
+
+      Like :meth:`glob` but returns an iterator.
+
+   .. py:method:: iglobfiles(pattern, recursive=False)
+
+      Like :meth:`globfiles` but returns an iterator.
 
 BarecatFileInfo Class
 ---------------------
@@ -457,7 +510,7 @@ Deprecated Functions
 
    Open a Barecat archive.
 
-   :param str path: Path to the archive (without suffix).
+   :param str path: Path to the archive (e.g., ``'data.barecat'``).
    :param str mode: 'r' (read), 'r+' (read-write), 'w+' (overwrite), 'a+' (append), 'x+' (exclusive create).
    :returns: Barecat instance.
 

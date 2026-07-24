@@ -132,7 +132,7 @@ Use ``DecodedView`` to automatically decode files based on extension:
            self.bc = barecat.Barecat(archive_path, threadsafe=True)
            self.dec = DecodedView(self.bc)
            self.transform = transform
-           self.paths = list(self.bc.index.iter_all_paths())
+           self.paths = list(self.bc.index.iter_all_filepaths())
 
        def __getitem__(self, idx):
            # Returns numpy array (H, W, C) for .jpg/.png
@@ -173,13 +173,13 @@ For very large datasets, avoid loading all paths into memory:
            worker_info = torch.utils.data.get_worker_info()
            if worker_info is not None:
                # Split files across workers
-               all_paths = list(bc.index.iter_all_paths())
+               all_paths = list(bc.index.iter_all_filepaths())
                per_worker = len(all_paths) // worker_info.num_workers
                start = worker_info.id * per_worker
                end = start + per_worker if worker_info.id < worker_info.num_workers - 1 else len(all_paths)
                paths = all_paths[start:end]
            else:
-               paths = list(bc.index.iter_all_paths())
+               paths = list(bc.index.iter_all_filepaths())
 
            for path in paths:
                data = bc[path]

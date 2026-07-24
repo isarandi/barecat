@@ -64,7 +64,7 @@ This minimizes disk seeks by reading files in the order they're stored.
 
    import random
 
-   paths = list(bc.index.iter_all_paths())
+   paths = list(bc.index.iter_all_filepaths())
    random.shuffle(paths)
    for path in paths:
        data = bc[path]

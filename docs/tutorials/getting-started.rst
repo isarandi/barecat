@@ -99,12 +99,13 @@ Python
 
        # List directory contents
        files = bc.listdir('')  # Root directory
-       print(files)  # ['hello.txt', 'goodbye.txt', 'subdir']
+       print(files)  # ['subdir', 'hello.txt', 'goodbye.txt']
 
        # Walk the archive (like os.walk)
        for root, dirs, files in bc.walk(''):
            for f in files:
-               print(f"{root}/{f}")
+               path = f if root == '.' else f'{root}/{f}'
+               print(path)
 
        # File-like access
        with bc.open('hello.txt', 'rb') as f:
