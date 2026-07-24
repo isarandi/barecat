@@ -105,12 +105,15 @@ def test_mkdir_exist_ok_preserves_existing_metadata(archive):
 # =============================================================================
 
 
-@pytest.mark.xfail(
-    strict=True, reason='audit item 34: contradictory overwrite+exist_ok not yet a ValueError'
-)
 def test_overwrite_with_exist_ok_false_is_contradiction(archive):
     with Barecat(archive, readonly=False):
         pass
+    with pytest.raises(ValueError):
+        Barecat(archive, readonly=False, overwrite=True, exist_ok=False)
+
+
+def test_overwrite_with_exist_ok_false_raises_even_for_missing_archive(archive):
+    """The flags contradict each other regardless of what is on disk."""
     with pytest.raises(ValueError):
         Barecat(archive, readonly=False, overwrite=True, exist_ok=False)
 

@@ -78,6 +78,8 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             If None, the shard size is unlimited.
         readonly: If True, the Barecat archive is opened in read-only mode.
         overwrite: If True, the Barecat archive is first deleted if it already exists.
+            Combining it with ``exist_ok=False`` raises ``ValueError``, since the two
+            flags ask for opposite things.
         auto_codec: **Deprecated.** Use :class:`DecodedView` instead. Will be removed in 1.0.
         exist_ok: If True, do not raise an error if the Barecat archive already exists.
         append_only: If True, only allow appending to the Barecat archive.
@@ -114,6 +116,12 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         path = os.fspath(path)
         if threadsafe and not readonly:
             raise ValueError('Threadsafe mode is only supported for readonly Barecat.')
+        if overwrite and not exist_ok:
+            raise ValueError(
+                'overwrite=True and exist_ok=False are contradictory: the first asks to '
+                'replace an existing archive, the second to refuse one. Pass only the '
+                "intended flag (compare Python's open(..., 'wx'))."
+            )
 
         if not readonly and barecat_util.exists(path):
             if not exist_ok:
