@@ -312,10 +312,13 @@ def encode_exr(data):
         n_channels = data.shape[2] if data.ndim == 3 else 1
 
         header = _OpenEXR.Header(w, h)
+        # Zero-pad the generic names so that they also sort correctly for a reader
+        # that only sorts lexicographically ('C1' < 'C10' < 'C2' otherwise).
+        width = len(str(n_channels - 1))
         channel_names = (
             ['R', 'G', 'B', 'A'][:n_channels]
             if n_channels <= 4
-            else [f'C{i}' for i in range(n_channels)]
+            else [f'C{i:0{width}d}' for i in range(n_channels)]
         )
         header['channels'] = {
             name: _Imath.Channel(_Imath.PixelType(_Imath.PixelType.FLOAT))
@@ -341,6 +344,13 @@ def encode_exr(data):
         raise ImportError('EXR requires OpenEXR or imageio. Install: pip install OpenEXR')
 
 
+def _exr_channel_sort_key(name):
+    """Order EXR channel names numerically for the generic 'C<n>' naming."""
+    if len(name) > 1 and name[0] == 'C' and name[1:].isdigit():
+        return (0, int(name[1:]), '')
+    return (1, 0, name)
+
+
 def decode_exr(data):
     """Decode EXR bytes to numpy array. Priority: OpenEXR > imageio."""
     import tempfile
@@ -364,7 +374,9 @@ def decode_exr(data):
             if n_channels <= 4 and all(c in channels for c in ['R', 'G', 'B', 'A'][:n_channels]):
                 channel_names = ['R', 'G', 'B', 'A'][:n_channels]
             else:
-                channel_names = sorted(channels.keys())
+                # Sort C-names by their number, not lexicographically, so files
+                # written before the names were zero-padded still come back in order.
+                channel_names = sorted(channels.keys(), key=_exr_channel_sort_key)
 
             pt = _Imath.PixelType(_Imath.PixelType.FLOAT)
 

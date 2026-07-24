@@ -332,9 +332,6 @@ def test_codec_roundtrip_png_rgb():
     np.testing.assert_array_equal(result, value)
 
 
-@pytest.mark.xfail(
-    strict=False, reason='audit item 50: grayscale decode shape is backend-dependent (cv2: 3ch)'
-)
 def test_codec_roundtrip_png_grayscale_stays_2d():
     """Decided contract (item 50): grayscale images decode as 2-D arrays."""
     np = pytest.importorskip('numpy')
@@ -390,3 +387,13 @@ def test_codec_jpeg_refuses_an_alpha_channel():
         _roundtrip('img.jpg', value)
 
 
+def test_codec_roundtrip_exr_many_channels_padded_names_sort_lexicographically():
+    """Zero-padded names keep a lexicographic-only reader in order too (item 51)."""
+    from barecat.io.codecs import _exr_channel_sort_key
+
+    padded = [f'C{i:02d}' for i in range(12)]
+    assert sorted(padded) == padded
+    assert sorted(padded, key=_exr_channel_sort_key) == padded
+    # Files written before the padding still unscramble via the numeric key
+    legacy = [f'C{i}' for i in range(12)]
+    assert sorted(legacy, key=_exr_channel_sort_key) == legacy
