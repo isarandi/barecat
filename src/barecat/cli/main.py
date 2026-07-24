@@ -1120,7 +1120,9 @@ def _handle_extract(args):
             # Extract specific paths (filtering not applied to explicit paths)
             for path in args.paths:
                 if path in bc:
-                    sys.stdout.buffer.write(bc[path])
+                    # Same to-disk contract as every other branch; use `barecat cat`
+                    # to stream a single file to stdout.
+                    extract_file(bc, path)
                 elif bc.index.isdir(path):
                     for dirpath, dirnames, filenames in bc.walk(path):
                         for fname in progressbar(filenames):

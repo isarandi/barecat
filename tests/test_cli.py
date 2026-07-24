@@ -989,6 +989,23 @@ def test_create_exclude_still_prunes_subtree(tmp_path):
     assert stored == ['src/keep/a.txt']
 
 
+def test_extract_single_file_writes_to_disk(tmp_path):
+    """`extract ARCHIVE FILE -C dir` writes the file, it does not cat it (audit item 23)."""
+    archive_path = tmp_path / 'ex.barecat'
+    with barecat.Barecat(str(archive_path), readonly=False) as bc:
+        bc['dir/a.bin'] = b'payload'
+
+    outdir = tmp_path / 'out'
+    outdir.mkdir()
+    result = subprocess.run(
+        ['barecat', 'extract', str(archive_path), 'dir/a.bin', '-C', str(outdir)],
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == b''
+    assert (outdir / 'dir/a.bin').read_bytes() == b'payload'
+
+
 def test_legacy_create_appends_to_existing_archive(tmp_path):
     """Legacy barecat-create honors exist_ok again instead of misreading workers (item 24)."""
     (tmp_path / 'a.txt').write_bytes(b'a')
