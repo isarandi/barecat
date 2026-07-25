@@ -75,7 +75,12 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         path: Path to the Barecat archive (e.g., 'archive.barecat'). Shards are stored
             alongside as 'archive.barecat-shard-XXXXX'.
         shard_size_limit: Maximum size of each shard file in bytes (int) or as a string like '1G'.
-            If None, the shard size is unlimited.
+            If None, a new archive gets no limit and an existing archive keeps its stored
+            one. An existing archive's stored limit is authoritative: passing a different
+            value logs a warning and keeps the stored limit (assign the
+            ``shard_size_limit`` property to change it explicitly). Callers that need to
+            know or assert what is actually in effect should read that property rather
+            than assume the passed value was accepted.
         readonly: If True, the Barecat archive is opened in read-only mode.
         overwrite: If True, the Barecat archive is first deleted if it already exists.
             Combining it with ``exist_ok=False`` raises ``ValueError``, since the two
@@ -605,6 +610,13 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         """Read a file into a buffer, starting from an offset within the file.
 
         Read until either the buffer is full, or the end of the file is reached.
+
+        The CRC32C check only runs when the read covers the entire file (offset 0
+        and a buffer at least as large as the file): the archive stores one
+        whole-file checksum, so a partial read has nothing sound to compare
+        against. Chunked readers — a FUSE mount reads in 128 KiB pieces — therefore
+        get no integrity verification from this method; run
+        :meth:`Index.verify_integrity` or read files whole where that matters.
 
         Args:
             item: Either a BarecatFileInfo object, or a path to a file within the archive.
@@ -1275,6 +1287,12 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             Defragmentation rewrites shard data in place — do not interrupt it
             (kill/power loss can corrupt the archive). For irreplaceable data, run
             on a copy of the archive.
+
+            Defragmentation works purely from the index: any bytes past a shard's
+            logical end that have no committed index entry (e.g. a region a
+            consumer reserved and is still writing into) are invisible to it and
+            are destroyed — relocated files are written over them and the shard is
+            truncated to its logical size. Commit metadata before defragmenting.
 
         Args:
             quick: Perform a faster, but less thorough defragmentation.
