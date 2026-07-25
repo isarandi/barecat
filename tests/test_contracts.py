@@ -670,3 +670,32 @@ def test_gapped_shard_list_refuses_to_open(tempdir):
         Barecat(archive, readonly=True)
 
 
+def test_close_flushes_shards_before_committing_index(archive):
+    """Committing first opens a power-loss window where the index references bytes
+    that were never written -- an archive that opens cleanly and reads garbage
+    (FIXME 4)."""
+    bc = Barecat(archive, readonly=False)
+    bc['f.bin'] = b'x'
+
+    order = []
+    orig_flush = bc.sharder.flush
+    orig_close = bc.index.close
+    bc.sharder.flush = lambda: (order.append('shards'), orig_flush())[1]
+    bc.index.close = lambda commit=True: (order.append('index'), orig_close(commit=commit))[1]
+    bc.close()
+    assert order == ['shards', 'index']
+
+
+def test_flush_is_a_public_durability_point(archive):
+    """A consumer handling fsync (e.g. a FUSE mount) needs something to call (FIXME 4)."""
+    bc = Barecat(archive, readonly=False)
+    try:
+        bc['f.bin'] = b'x'
+        bc.flush()
+        # The committed state is now visible to an independent connection
+        with Barecat(archive, readonly=True) as reader:
+            assert reader['f.bin'] == b'x'
+    finally:
+        bc.close()
+
+

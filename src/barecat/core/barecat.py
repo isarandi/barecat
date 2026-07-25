@@ -1285,6 +1285,18 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
         else:
             return defragger.defrag()
 
+    def flush(self):
+        """Make all pending writes durable: fsync the shard data, then commit the index.
+
+        In this order, so the committed index never refers to bytes that are not on
+        disk yet. This is the entry point for consumers (e.g. a FUSE mount handling
+        fsync) that need a durability point without closing the archive.
+        """
+        if self.readonly:
+            return
+        self.sharder.flush()
+        self.index.conn.commit()
+
     def close(self, commit: bool = True):
         """Close the Barecat archive.
 
@@ -1292,6 +1304,11 @@ class Barecat(MutableMapping[str, Any], AbstractContextManager):
             commit: If True (default), commit pending index changes; if False, roll
                 them back to the last commit boundary.
         """
+        if not self.readonly and commit:
+            # fsync the shards before the index commit: committing first would open
+            # a window where a power loss leaves the index referencing bytes that
+            # were never written — an archive that opens cleanly and reads garbage.
+            self.sharder.flush()
         self._index_storage.close(commit=commit)
         self.sharder.close()
 

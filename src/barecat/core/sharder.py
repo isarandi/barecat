@@ -310,6 +310,19 @@ class Sharder(AbstractContextManager):
             f.truncate(logical_shard_ends[i])
         self.reopen_current_shard(self.shard_mode_last_existing)
 
+    def flush(self):
+        """Make shard data durable (fsync every writable shard file).
+
+        Shard writes go through os.pwrite, so there is no user-space buffer to
+        flush; what this adds is the page-cache-to-disk step. Called before the
+        index commits, so committed metadata never refers to bytes that a power
+        loss could still take away (data before metadata).
+        """
+        for f in self._shard_files:
+            if not f.closed and f.writable():
+                f.flush()
+                os.fsync(f.fileno())
+
     def close(self):
         for f in self._shard_files:
             f.close()
