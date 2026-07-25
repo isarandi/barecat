@@ -630,3 +630,20 @@ def test_entry_info_defaults_and_epoch_zero_mtime():
 
     # num_subdirs is no longer derived from st_nlink, which is 1 on btrfs/overlayfs
     assert BarecatDirInfo().num_subdirs is None
+
+
+# =============================================================================
+# FIXME items from dependent-package audits (barecat_cython, barecat_mount)
+# =============================================================================
+
+
+def test_path_helpers_are_public(tempdir):
+    """Consumers re-implemented these and drifted; they are part of the API now (FIXME 1)."""
+    assert barecat.normalize_path('a//b/') == 'a/b'
+    archive = osp.join(tempdir, 'x.barecat')
+    with Barecat(archive, readonly=False, shard_size_limit=100) as bc:
+        bc['f.bin'] = b'x' * 60
+    assert barecat.resolve_index_path(archive) == archive
+    assert barecat.find_shard_paths(archive) == [f'{archive}-shard-00000']
+
+

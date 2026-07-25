@@ -58,7 +58,11 @@ from .cli.impl import (
 from .cli.completions import get_completion_script
 
 # Archive utilities
-from .util.misc import exists, remove
+from .util.misc import exists, find_shard_paths, remove
+
+# Path resolution (public so consumers match this package's archive-resolution
+# behavior instead of re-implementing it and drifting)
+from .core.paths import normalize_path, resolve_index_path
 
 # Convenience API
 from ._api import get_cached_reader, open
@@ -105,7 +109,11 @@ __all__ = [
     'get_completion_script',
     # Archive utilities
     'exists',
+    'find_shard_paths',
     'remove',
+    # Path resolution
+    'normalize_path',
+    'resolve_index_path',
     # Convenience API
     'get_cached_reader',
     'open',
