@@ -3,6 +3,7 @@ import functools
 import glob
 import re
 import itertools
+import math
 import os
 import os.path as osp
 from datetime import datetime
@@ -223,7 +224,10 @@ def parse_size(size):
 
 
 def datetime_to_ns(dt):
-    return int(dt.timestamp() * 1e9)
+    # Not int(dt.timestamp() * 1e9): scaling the float loses precision (~256 ns at
+    # current epoch values, degrading over time). Whole seconds up to 2**53 are
+    # exact in a float, and the sub-second part comes from dt.microsecond directly.
+    return math.floor(dt.timestamp()) * 1_000_000_000 + dt.microsecond * 1_000
 
 
 def ns_to_datetime(ns):

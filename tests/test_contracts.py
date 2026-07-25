@@ -735,3 +735,19 @@ def test_reopen_reuses_file_object_when_mode_is_equivalent(tempdir):
         g.close()
 
 
+def test_mtime_conversion_keeps_microsecond_precision():
+    """int(dt.timestamp() * 1e9) rounds through a float (~256 ns granularity at
+    current epochs, degrading over time) (FIXME 10)."""
+    import time
+    from datetime import datetime
+
+    from barecat.core.types import BarecatFileInfo
+    from barecat.util.misc import datetime_to_ns
+
+    dt = datetime(2023, 5, 17, 12, 34, 56, 789123)
+    assert datetime_to_ns(dt) % 1_000_000_000 == 789_123_000
+
+    finfo = BarecatFileInfo(path='x')
+    finfo.update_mtime()
+    assert isinstance(finfo.mtime_ns, int)
+    assert abs(finfo.mtime_ns - time.time_ns()) < 5_000_000_000

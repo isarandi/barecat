@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime
 from enum import Flag, auto
 from typing import Union, Optional
@@ -83,7 +84,9 @@ class BarecatEntryInfo:
 
     def update_mtime(self):
         """Update the last modification time to the current time."""
-        self.mtime_dt = datetime.now()
+        # time_ns() directly: datetime.now() only has microsecond resolution and
+        # the datetime round-trip goes through a float.
+        self.mtime_ns = time.time_ns()
 
     def fill_from_statresult(self, s: os.stat_result):
         """Fills the metadata information from a stat result, obtained from the file system.
