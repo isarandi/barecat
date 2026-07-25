@@ -5,7 +5,7 @@ from contextlib import AbstractContextManager
 import crc32c as crc32c_lib
 from .types import SHARD_SIZE_UNLIMITED
 from ..io.fileobj import BarecatReadOnlyFileObject, BarecatReadWriteFileObject
-from ..exceptions import FileTooLargeBarecatError
+from ..exceptions import BarecatIntegrityError, FileTooLargeBarecatError
 from ..util.misc import find_shard_paths, raise_if_readonly
 from ..io.open import open_, reopen
 from ..io.copyfile import copy
@@ -260,6 +260,21 @@ class Sharder(AbstractContextManager):
 
     def open_shard_files(self):
         shard_paths = find_shard_paths(self.path)
+
+        # Shards are created strictly as 0..n-1 and only ever deleted from the tail,
+        # so a gap always means damage. Everything downstream indexes shards
+        # positionally; opening a gapped list would serve bytes from the wrong shard,
+        # and only full-file CRC-checked reads would even notice.
+        expected_paths = [self.get_shard_path(i) for i in range(len(shard_paths))]
+        if shard_paths != expected_paths:
+            actual, expected = next((a, e) for a, e in zip(shard_paths, expected_paths) if a != e)
+            raise BarecatIntegrityError(
+                f'Shard files of {self.path} are not contiguous from 0: expected '
+                f'{osp.basename(expected)}, found {osp.basename(actual)}. This archive '
+                f'is damaged (shards are never legitimately created or deleted out of '
+                f'order).'
+            )
+
         if (
             not self.readonly
             and not self.allow_writing_symlinked_shard

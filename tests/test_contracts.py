@@ -647,3 +647,26 @@ def test_path_helpers_are_public(tempdir):
     assert barecat.find_shard_paths(archive) == [f'{archive}-shard-00000']
 
 
+def test_gapped_shard_list_refuses_to_open(tempdir):
+    """A gap in the shard numbering means damage; positional indexing would read the
+    wrong shard, and only CRC-checked whole-file reads would notice (FIXME 2)."""
+    import os
+
+    archive = osp.join(tempdir, 'g.barecat')
+    with Barecat(archive, readonly=False, shard_size_limit=100) as bc:
+        for i in range(3):
+            bc[f'f{i}.bin'] = bytes([i]) * 60  # 60+60 > 100, so one file per shard
+
+    from barecat import BarecatIntegrityError
+
+    os.remove(f'{archive}-shard-00001')
+    with pytest.raises(BarecatIntegrityError, match='shard-00001'):
+        Barecat(archive, readonly=True)
+
+    # A missing shard 0 is the same damage
+    os.rename(f'{archive}-shard-00002', f'{archive}-shard-00001')
+    os.remove(f'{archive}-shard-00000')
+    with pytest.raises(BarecatIntegrityError, match='shard-00000'):
+        Barecat(archive, readonly=True)
+
+
