@@ -1994,7 +1994,9 @@ class Fetcher:
     def fetch_iter(self, query, params=(), cursor=None, bufsize=None, rowcls=None):
         # This needs its own cursor because the results are not all fetched in this
         # call, the user may interleave other queries before consuming all results
-        # from this generator
+        # from this generator. That also means the row_factory cannot be restored
+        # here (the generator outlives the call): pass a shared cursor at your own
+        # risk, its factory stays whatever the last fetch installed.
         cursor = self.conn.cursor() if cursor is None else cursor
         bufsize = bufsize if bufsize is not None else self.bufsize
         cursor.row_factory = rowcls.row_factory if rowcls is not None else self.row_factory
@@ -2002,11 +2004,27 @@ class Fetcher:
         while rows := cursor.fetchmany(bufsize):
             yield from rows
 
+    # The typed fetchers set the cursor's row_factory for the duration of the fetch
+    # and restore it afterwards. The default cursor is Index.cursor, which consumers
+    # also run their own SQL on; leaving a row class installed there made every
+    # subsequent third-party query return that row class (observed to brick a FUSE
+    # mount after a single lookup_file call).
+
     def fetch_one(self, query, params=(), cursor=None, rowcls=None):
         cursor = self.cursor if cursor is None else cursor
-        cursor.row_factory = rowcls.row_factory if rowcls is not None else self.row_factory
-        cursor.execute(query, params)
-        return cursor.fetchone()
+        if rowcls is None:
+            # The hot read path (__getitem__) comes through here untyped; keep it at
+            # a single attribute write, exactly as before the restore fix.
+            cursor.row_factory = self.row_factory
+            cursor.execute(query, params)
+            return cursor.fetchone()
+        prev_factory = cursor.row_factory
+        cursor.row_factory = rowcls.row_factory
+        try:
+            cursor.execute(query, params)
+            return cursor.fetchone()
+        finally:
+            cursor.row_factory = prev_factory
 
     def fetch_one_or_raise(self, query, params=(), cursor=None, rowcls=None):
         res = self.fetch_one(query, params, cursor, rowcls)
@@ -2016,17 +2034,33 @@ class Fetcher:
 
     def fetch_all(self, query, params=(), cursor=None, rowcls=None):
         cursor = self.cursor if cursor is None else cursor
-        cursor.row_factory = rowcls.row_factory if rowcls is not None else self.row_factory
-        cursor.execute(query, params)
-        return cursor.fetchall()
+        if rowcls is None:
+            cursor.row_factory = self.row_factory
+            cursor.execute(query, params)
+            return cursor.fetchall()
+        prev_factory = cursor.row_factory
+        cursor.row_factory = rowcls.row_factory
+        try:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+        finally:
+            cursor.row_factory = prev_factory
 
     def fetch_many(self, query, params=(), cursor=None, bufsize=None, rowcls=None):
         cursor = self.cursor if cursor is None else cursor
         # fetchmany(None) is a TypeError, so fall back like fetch_iter does
         bufsize = bufsize if bufsize is not None else self.bufsize
-        cursor.row_factory = rowcls.row_factory if rowcls is not None else self.row_factory
-        cursor.execute(query, params)
-        return cursor.fetchmany(bufsize)
+        if rowcls is None:
+            cursor.row_factory = self.row_factory
+            cursor.execute(query, params)
+            return cursor.fetchmany(bufsize)
+        prev_factory = cursor.row_factory
+        cursor.row_factory = rowcls.row_factory
+        try:
+            cursor.execute(query, params)
+            return cursor.fetchmany(bufsize)
+        finally:
+            cursor.row_factory = prev_factory
 
 
 class RecallableIter:

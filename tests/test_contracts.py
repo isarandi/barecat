@@ -699,3 +699,20 @@ def test_flush_is_a_public_durability_point(archive):
         bc.close()
 
 
+def test_typed_fetch_does_not_poison_the_shared_cursor(archive):
+    """lookup_file left BarecatFileInfo installed as the shared cursor's row factory,
+    breaking every subsequent third-party query on index.cursor (FIXME 5)."""
+    import sqlite3
+
+    with Barecat(archive, readonly=False) as bc:
+        bc['dir/f.bin'] = b'x'
+        bc.index.lookup_file('dir/f.bin')
+        bc.index.lookup_dir('dir')
+
+        row = bc.index.cursor.execute('SELECT path, size FROM files').fetchone()
+        assert isinstance(row, sqlite3.Row)
+        path, size = row  # positional unpacking, the consumer pattern that broke
+        assert (path, size) == ('dir/f.bin', 1)
+        assert bc.index.cursor.row_factory is sqlite3.Row
+
+
