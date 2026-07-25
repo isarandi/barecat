@@ -34,8 +34,14 @@ def open_(path, mode, *args, **kwargs):
 
 
 def reopen(file, mode):
-    """Close and reopen a file with a different mode."""
-    if file.mode == mode:
+    """Close and reopen a file with a different mode; reuse it if the mode already matches.
+
+    Python normalizes mode strings ('r+b' becomes 'rb+'), so a literal string
+    comparison never matched and every reopen replaced the file object — including
+    ones a consumer was still holding. Distinct modes always have distinct
+    character sets, so comparing as sets recognizes the equivalent spellings.
+    """
+    if set(file.mode) == set(mode):
         return file
     file.close()
     return open_(file.name, mode)

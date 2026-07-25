@@ -716,3 +716,22 @@ def test_typed_fetch_does_not_poison_the_shared_cursor(archive):
         assert bc.index.cursor.row_factory is sqlite3.Row
 
 
+def test_reopen_reuses_file_object_when_mode_is_equivalent(tempdir):
+    """Python normalizes 'r+b' to 'rb+', so the fast-path comparison never matched
+    and every defrag replaced file objects consumers were still holding (FIXME 6)."""
+    from barecat.io.open import reopen
+
+    path = osp.join(tempdir, 'f.bin')
+    with open(path, 'wb') as f:
+        f.write(b'x')
+
+    f = open(path, 'r+b')
+    try:
+        assert reopen(f, 'r+b') is f
+        assert not f.closed
+        g = reopen(f, 'rb')
+        assert g is not f and f.closed
+    finally:
+        g.close()
+
+
