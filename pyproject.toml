@@ -104,6 +104,9 @@ lint = [
     "ruff",
     "pre-commit",
 ]
+postgres = [
+    "psycopg>=3",
+]
 docs = [
     "sphinx",
     "sphinxcontrib-bibtex",
