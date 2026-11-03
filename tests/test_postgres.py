@@ -12,9 +12,9 @@ import sys
 
 import pytest
 
-psycopg = pytest.importorskip('psycopg')
-
 from barecat import Barecat, PathEscapeBarecatError
+
+psycopg = pytest.importorskip('psycopg')
 
 pytestmark = pytest.mark.skipif(
     shutil.which('initdb') is None or shutil.which('pg_ctl') is None,

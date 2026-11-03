@@ -39,7 +39,7 @@ globals()[main_module_name] = module
 linkcode_url = repo_url
 
 author = project_info["authors"][0]["name"]
-copyright = f'%Y'
+copyright = '%Y'
 
 # -- General configuration ---------------------------------------------------
 add_module_names = False

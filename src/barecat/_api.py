@@ -105,8 +105,6 @@ def get_cached_reader(path, auto_codec=None):
             will change to False in version 1.0. Pass True or False explicitly to
             silence the deprecation warning. Use DecodedView for new code.
     """
-    import multiprocessing_utils
-
     if auto_codec is None:
         warnings.warn(
             'get_cached_reader() currently defaults to auto_codec=True, but this '
