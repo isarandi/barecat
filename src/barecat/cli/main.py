@@ -252,10 +252,10 @@ def main():
         help='Only include files matching glob pattern (repeatable)',
     )
 
-    # list
+    # ls
     p = subparsers.add_parser(
-        'list',
-        aliases=['ls', 'l', 't'],
+        'ls',
+        aliases=['list', 'l', 't'],
         help='List archive contents',
     )
     p.add_argument('archive', type=str, help='Barecat archive path')
@@ -631,7 +631,7 @@ def main():
     elif args.command in ('extract', 'x'):
         _handle_extract(args)
 
-    elif args.command in ('list', 'ls', 'l', 't'):
+    elif args.command in ('ls', 'list', 'l', 't'):
         _handle_list(args)
 
     elif args.command == 'cat':

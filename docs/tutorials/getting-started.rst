@@ -65,9 +65,9 @@ List the contents:
 
 .. code-block:: bash
 
-   barecat list myarchive.barecat
-   barecat list -l myarchive.barecat        # Long format with sizes
-   barecat list -lR myarchive.barecat       # Recursive listing
+   barecat ls myarchive.barecat
+   barecat ls -l myarchive.barecat          # Long format with sizes
+   barecat ls -lR myarchive.barecat         # Recursive listing
 
 Extract a single file to stdout:
 

@@ -5,8 +5,8 @@ _barecat() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="create add extract list cat find shell browse du ncdu tree verify defrag reshard subset merge index-to-csv to-ncdu-json convert upgrade completion-script mount rsync"
-    local command_aliases="c a x ls l t"
+    local commands="create add extract ls cat find shell browse du ncdu tree verify defrag reshard subset merge index-to-csv to-ncdu-json convert upgrade completion-script mount rsync"
+    local command_aliases="c a x list l t"
 
     # Find the subcommand
     local cmd=""

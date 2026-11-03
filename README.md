@@ -92,8 +92,8 @@ find /data -name '*.jpg' -print0 | barecat create -0 mydata.barecat -T -
 barecat extract mydata.barecat -C /output/
 
 # List contents
-barecat list mydata.barecat
-barecat list -l mydata.barecat         # Long format with sizes
+barecat ls mydata.barecat
+barecat ls -l mydata.barecat           # Long format with sizes
 
 # Add files to an existing archive
 barecat add mydata.barecat newdir/

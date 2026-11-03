@@ -79,7 +79,7 @@ Barecat provides a unified ``barecat`` command with subcommands:
    barecat extract mydata.barecat -C /output/
 
    # List contents
-   barecat list -l mydata.barecat
+   barecat ls -l mydata.barecat
 
    # Interactive shell
    barecat shell mydata.barecat

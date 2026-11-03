@@ -150,8 +150,8 @@ are extracted. Otherwise, the entire archive is extracted.
    barecat extract myarchive.barecat subdir/file.txt
 
 
-barecat list
-~~~~~~~~~~~~
+barecat ls
+~~~~~~~~~~
 
 List archive contents.
 
@@ -159,9 +159,9 @@ List archive contents.
 
 .. code-block:: text
 
-   barecat list [options] ARCHIVE [PATHS...]
+   barecat ls [options] ARCHIVE [PATHS...]
 
-**Aliases:** ``ls``, ``l``, ``t``
+**Aliases:** ``list``, ``l``, ``t``
 
 **Options:**
 
@@ -175,9 +175,9 @@ List archive contents.
 
 .. code-block:: bash
 
-   barecat list myarchive.barecat
+   barecat ls myarchive.barecat
    barecat ls -l myarchive.barecat subdir/
-   barecat list -lR myarchive.barecat
+   barecat ls -lR myarchive.barecat
 
 
 barecat find

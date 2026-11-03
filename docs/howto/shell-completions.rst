@@ -60,7 +60,7 @@ Commands and aliases:
 .. code-block:: bash
 
    barecat <TAB>
-   # create  add  extract  list  ls  cat  shell  browse  du  verify  ...
+   # create  add  extract  ls  list  cat  shell  browse  du  verify  ...
 
 Options:
 
