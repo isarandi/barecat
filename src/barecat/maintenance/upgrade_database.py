@@ -1,14 +1,16 @@
 import argparse
+import mmap
 import os
 import sqlite3
 import warnings
 
 import barecat
-import barecat_cython
+import crc32c as crc32c_lib
+from ..core.sharder import Sharder
 from ..core.types import SCHEMA_VERSION_MAJOR, SCHEMA_VERSION_MINOR
 from ..core.paths import resolve_index_path
 from ..util.consumed_threadpool import ConsumedThreadPool
-from ..exceptions import BarecatError
+from ..exceptions import BarecatError, BarecatIntegrityError
 from ..util.misc import sqlite_uri
 from ..util.progbar import progressbar
 
@@ -178,7 +180,8 @@ def update_crc32c(path_out: str, workers=8):
     # By this point the index always lives at the archive path itself
     dbase_path = path_out
     with (
-        barecat_cython.BarecatMmapCython(path_out) as sh,
+        Sharder(path_out, readonly=True) as sharder,
+        _ShardMaps(sharder) as maps,
         barecat.Index(dbase_path, readonly=False) as index,
     ):
         c = index.cursor
@@ -196,9 +199,7 @@ def update_crc32c(path_out: str, workers=8):
             for fi in progressbar(
                 index.iter_all_fileinfos(order=barecat.Order.ADDRESS), total=index.num_files
             ):
-                ctp.submit(
-                    sh.crc32c_from_address, userdata=fi.path, args=(fi.shard, fi.offset, fi.size)
-                )
+                ctp.submit(maps.crc32c, userdata=fi.path, args=(fi.shard, fi.offset, fi.size))
 
         print('Updating crc32c in the barecat index...')
         c.execute('ATTACH DATABASE ? AS newdb', (sqlite_uri(path_newcrc_temp, 'ro'),))
@@ -214,6 +215,42 @@ def update_crc32c(path_out: str, workers=8):
         c.execute('DETACH DATABASE newdb')
 
     os.remove(path_newcrc_temp)
+
+
+class _ShardMaps:
+    """Read-only memory maps of the shards, for checksumming the files in place.
+
+    The bytes are never copied, so memory use does not depend on the file sizes (a copying
+    read holds one whole file per worker thread), and crc32c releases the GIL for larger
+    spans, so that the worker threads run in parallel.
+    """
+
+    def __init__(self, sharder):
+        self.maps = [
+            mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+            if os.fstat(f.fileno()).st_size
+            else None
+            for f in sharder.shard_files
+        ]
+
+    def crc32c(self, shard, offset, size):
+        if size == 0:
+            return crc32c_lib.crc32c(b'')
+        with memoryview(self.maps[shard]) as view, view[offset : offset + size] as span:
+            if len(span) != size:
+                raise BarecatIntegrityError(
+                    f'The index has a file of {size} bytes at offset {offset} of shard {shard}, '
+                    f'beyond the end of the shard.'
+                )
+            return crc32c_lib.crc32c(span)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        for shard_map in self.maps:
+            if shard_map is not None:
+                shard_map.close()
 
 
 def temp_crc_writer_main(dbpath, future_iter):
