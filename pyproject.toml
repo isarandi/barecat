@@ -102,7 +102,7 @@ test = [
     "Pillow",
 ]
 lint = [
-    "ruff",
+    "ruff==0.17.3",
     "pre-commit",
 ]
 postgres = [
@@ -139,7 +139,7 @@ python_functions = ["test_*"]
 
 [tool.ruff]
 line-length = 99
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.format]
 quote-style = "single"
