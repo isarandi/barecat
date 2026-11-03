@@ -180,8 +180,7 @@ def encode_jpeg(data, quality=95):
     """
     if data.ndim == 3 and data.shape[2] == 4:
         raise ValueError(
-            'JPEG cannot store an alpha channel. Drop it explicitly (data[:, :, :3]) '
-            'or use PNG.'
+            'JPEG cannot store an alpha channel. Drop it explicitly (data[:, :, :3]) or use PNG.'
         )
     if _HAS_CV2:
         if data.ndim == 3 and data.shape[2] == 3:

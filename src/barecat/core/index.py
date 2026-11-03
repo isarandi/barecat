@@ -1886,7 +1886,7 @@ class Index(AbstractContextManager):
         # PRAGMA foreign_keys can only be changed outside of a transaction
         if self.conn.in_transaction:
             self.conn.commit()
-        self.cursor.execute(f"PRAGMA foreign_keys = {'ON' if value else 'OFF'}")
+        self.cursor.execute(f'PRAGMA foreign_keys = {"ON" if value else "OFF"}')
 
     @contextlib.contextmanager
     def no_foreign_keys(self):

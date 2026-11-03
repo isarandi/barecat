@@ -85,9 +85,9 @@ def cmd_export(args):
 
 def cmd_stats(args):
     stats = get_stats(resolve_conninfo(args, args.dbname))
-    print(f"Files:  {stats['num_files']}")
-    print(f"Size:   {stats['total_size']} bytes")
-    print(f"Shards: {stats['num_shards']}")
+    print(f'Files:  {stats["num_files"]}')
+    print(f'Size:   {stats["total_size"]} bytes')
+    print(f'Shards: {stats["num_shards"]}')
 
 
 def main(argv=None):

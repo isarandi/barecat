@@ -87,7 +87,7 @@ class IndexMergeHelper:
                     mode, uid, gid, mtime_ns)
                 SELECT {path_expr}, num_subdirs, num_files, size_tree, num_files_tree,
                     mode, uid, gid, mtime_ns
-                FROM sourcedb.dirs WHERE {"path != ''" if prefix else "true"}
+                FROM sourcedb.dirs WHERE {"path != ''" if prefix else 'true'}
                 ON CONFLICT (dirs.path) DO UPDATE SET
                     num_subdirs = num_subdirs + excluded.num_subdirs,
                     num_files = num_files + excluded.num_files,

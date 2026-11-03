@@ -81,9 +81,9 @@ class BarecatDu:
         if count < 1000:
             return f'{count:>6}'
         elif count < 1000000:
-            return f'{count/1000:>5.1f}K'
+            return f'{count / 1000:>5.1f}K'
         else:
-            return f'{count/1000000:>5.1f}M'
+            return f'{count / 1000000:>5.1f}M'
 
     def _draw(self, stdscr):
         """Draw the interface."""
@@ -91,7 +91,7 @@ class BarecatDu:
         height, width = stdscr.getmaxyx()
 
         # Header
-        header = f"--- {self.archive_path}: {self.cwd or '/'} "
+        header = f'--- {self.archive_path}: {self.cwd or "/"} '
         header += '-' * (width - len(header) - 1)
         try:
             stdscr.addnstr(0, 0, header[: width - 1], width - 1)
@@ -107,9 +107,9 @@ class BarecatDu:
 
         # Column headers (aligned with data columns)
         try:
-            stdscr.addnstr(1, 0, f"{'Size':>{size_col_width}}", size_col_width, curses.A_DIM)
+            stdscr.addnstr(1, 0, f'{"Size":>{size_col_width}}', size_col_width, curses.A_DIM)
             stdscr.addnstr(
-                1, size_col_width, f"{'Files':>{count_col_width}}", count_col_width, curses.A_DIM
+                1, size_col_width, f'{"Files":>{count_col_width}}', count_col_width, curses.A_DIM
             )
             stdscr.addnstr(1, name_start, 'Name', width - name_start - 1, curses.A_DIM)
         except curses.error:

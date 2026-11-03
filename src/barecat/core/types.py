@@ -295,7 +295,7 @@ class BarecatDirInfo(BarecatEntryInfo):
             parts.append(f'{self.num_files_tree} files')
         if self.size_tree is not None:
             parts.append(f'{_format_size_short(self.size_tree)}')
-        return f"BarecatDirInfo({', '.join(parts)})"
+        return f'BarecatDirInfo({", ".join(parts)})'
 
 
 def _format_size_short(size):

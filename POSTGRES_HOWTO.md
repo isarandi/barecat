@@ -125,11 +125,11 @@ data. When done, export again (to a new path or overwrite the old index).
 
 ```python
 from barecat.postgres import (
-    setup_schema,         # Create PG schema (idempotent)
+    setup_schema,  # Create PG schema (idempotent)
     BarecatPostgresWriter,  # Per-worker writer (MutableMapping)
-    export_to_sqlite,     # PG -> SQLite index
-    import_from_sqlite,   # SQLite index -> PG
-    get_stats,            # {num_files, total_size, num_shards}
+    export_to_sqlite,  # PG -> SQLite index
+    import_from_sqlite,  # SQLite index -> PG
+    get_stats,  # {num_files, total_size, num_shards}
 )
 ```
 

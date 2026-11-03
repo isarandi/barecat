@@ -225,7 +225,7 @@ def find_entries(
             file_params = [root_path, f'{root_path}/*'] + file_params
 
         if file_conditions:
-            file_query = f"SELECT path, size FROM files WHERE {' AND '.join(file_conditions)}"
+            file_query = f'SELECT path, size FROM files WHERE {" AND ".join(file_conditions)}'
         else:
             file_query = 'SELECT path, size FROM files'
 
@@ -249,7 +249,7 @@ def find_entries(
             dir_params = [root_path, f'{root_path}/*'] + dir_params
 
         if dir_conditions:
-            dir_query = f"SELECT path, size_tree FROM dirs WHERE {' AND '.join(dir_conditions)}"
+            dir_query = f'SELECT path, size_tree FROM dirs WHERE {" AND ".join(dir_conditions)}'
         else:
             dir_query = 'SELECT path, size_tree FROM dirs'
 
@@ -399,7 +399,7 @@ def du_entries(
         )
     else:
         dir_query = (
-            f"SELECT path, size_tree FROM dirs{depth_filter.replace(' AND ', ' WHERE ', 1)}"
+            f'SELECT path, size_tree FROM dirs{depth_filter.replace(" AND ", " WHERE ", 1)}'
         )
         dir_params = (max_abs_depth,) if max_abs_depth is not None else ()
 

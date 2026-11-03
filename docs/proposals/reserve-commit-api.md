@@ -57,14 +57,14 @@ question 5).
 ## Proposed API
 
 ```python
-res = bc.reserve_append()          # claim the tail of the last shard
-res.pwrite(buf, offset)            # positional write within the region
-res.pread(buf, offset)             # read back what was written so far
-res.truncate(length)               # grow (zero-fill) or shrink (real ftruncate)
-res.size                           # high-water mark / truncated size
-res.shard, res.offset              # current placement (may change on rollover)
-res.commit(mode=..., uid=..., gid=..., mtime_ns=...)   # insert the index row
-res.abandon()                      # forget it; the bytes become a gap
+res = bc.reserve_append()  # claim the tail of the last shard
+res.pwrite(buf, offset)  # positional write within the region
+res.pread(buf, offset)  # read back what was written so far
+res.truncate(length)  # grow (zero-fill) or shrink (real ftruncate)
+res.size  # high-water mark / truncated size
+res.shard, res.offset  # current placement (may change on rollover)
+res.commit(mode=..., uid=..., gid=..., mtime_ns=...)  # insert the index row
+res.abandon()  # forget it; the bytes become a gap
 ```
 
 Also usable as a context manager: `with bc.reserve_append() as res: ...` commits on

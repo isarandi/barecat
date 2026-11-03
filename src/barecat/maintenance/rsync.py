@@ -657,11 +657,11 @@ def _sync_one_file_to_archive(
                     return
 
     if options.dry_run:
-        print(f"would {'update' if exists else 'add'}: {archive_path}")
+        print(f'would {"update" if exists else "add"}: {archive_path}')
         return
 
     if options.verbose:
-        print(f"{'update' if exists else 'add'}: {archive_path}")
+        print(f'{"update" if exists else "add"}: {archive_path}')
 
     # Create file info with metadata
     finfo = BarecatFileInfo(path=archive_path)
@@ -805,14 +805,14 @@ def _sync_tarzip_to_archive(
                         continue
 
         if options.dry_run:
-            print(f"would {'update' if exists else 'copy'}: {src_info.path} -> {dest_path}")
+            print(f'would {"update" if exists else "copy"}: {src_info.path} -> {dest_path}')
             # Must consume fileobj before continuing
             if fileobj:
                 fileobj.read()
             continue
 
         if options.verbose or options.progress:
-            print(f"{'update' if exists else 'copy'}: {dest_path}")
+            print(f'{"update" if exists else "copy"}: {dest_path}')
 
         # Create file info
         finfo = BarecatFileInfo(
@@ -1228,11 +1228,11 @@ def _sync_one_archive_entry(src_bc, src_info, dest_path: str, dest_bc, options: 
                     return
 
     if options.dry_run:
-        print(f"would {'update' if exists else 'copy'}: {src_info.path} -> {dest_path}")
+        print(f'would {"update" if exists else "copy"}: {src_info.path} -> {dest_path}')
         return
 
     if options.verbose or options.progress:
-        print(f"{'update' if exists else 'copy'}: {dest_path}")
+        print(f'{"update" if exists else "copy"}: {dest_path}')
 
     # Create file info with metadata from source
     finfo = BarecatFileInfo(

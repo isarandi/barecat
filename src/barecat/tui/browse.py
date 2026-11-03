@@ -240,7 +240,7 @@ class BarecatBrowser:
                 pass
 
         # Draw status bar
-        status = f" {self.cwd or '/'} | {len(self.entries)} items"
+        status = f' {self.cwd or "/"} | {len(self.entries)} items'
         if self.entries:
             selected = self._get_selected_path()
             if selected and not self.entries[self.cursor][1]:

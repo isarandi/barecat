@@ -246,9 +246,9 @@ class TestGlobToSqlite:
 
         # SQLite should match at least what Python matches
         if python_matches:
-            assert (
-                sqlite_matches
-            ), f"Python matched {test_char!r} with {pattern!r} but SQLite didn't"
+            assert sqlite_matches, (
+                f"Python matched {test_char!r} with {pattern!r} but SQLite didn't"
+            )
 
     @given(
         st.text(alphabet='abc', min_size=1, max_size=3),
@@ -356,9 +356,9 @@ class TestCrossValidation:
         regex = glob_to_regex(pattern)
         our_result = bool(re.fullmatch(regex, test_str))
 
-        assert (
-            our_result == fnmatch_result
-        ), f'Mismatch for pattern={pattern!r}, string={test_str!r}'
+        assert our_result == fnmatch_result, (
+            f'Mismatch for pattern={pattern!r}, string={test_str!r}'
+        )
 
     @given(
         st.text(alphabet='abc', min_size=1, max_size=3),

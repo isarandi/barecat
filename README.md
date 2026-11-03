@@ -175,7 +175,7 @@ with Barecat('data.barecat', readonly=False) as bc:
 
 with Barecat('data.barecat') as bc:
     dec = DecodedView(bc)
-    config = dec['config.json']   # Returns dict
+    config = dec['config.json']  # Returns dict
     weights = dec['weights.npy']  # Returns numpy array
 ```
 

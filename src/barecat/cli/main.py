@@ -58,11 +58,11 @@ def _print_defrag_stats(stats):
     def fmt(size):
         return _format_size(size, human_readable=True)
 
-    print(f"Physical size:       {fmt(stats['physical_size'])}")
-    print(f"Logical size:        {fmt(stats['logical_size'])}")
-    print(f"Freeable space:      {fmt(stats['total_gap_size'])}")
-    print(f"Number of gaps:      {stats['num_gaps']}")
-    print(f"Fragmentation ratio: {stats['fragmentation_ratio']:.3f}")
+    print(f'Physical size:       {fmt(stats["physical_size"])}')
+    print(f'Logical size:        {fmt(stats["logical_size"])}')
+    print(f'Freeable space:      {fmt(stats["total_gap_size"])}')
+    print(f'Number of gaps:      {stats["num_gaps"]}')
+    print(f'Fragmentation ratio: {stats["fragmentation_ratio"]:.3f}')
 
     if stats['gap_sizes']:
         gap_sizes = sorted(stats['gap_sizes'])
@@ -688,7 +688,7 @@ def main():
                     print('Index integrity errors were found.', file=sys.stderr)
                     sys.exit(1)
                 total_size = _format_size(bc.total_size, human_readable=True)
-                print(f'Verified {bc.num_files} files ({total_size}), ' f'all checksums OK.')
+                print(f'Verified {bc.num_files} files ({total_size}), all checksums OK.')
 
     elif args.command == 'defrag':
         readonly = args.dry_run
@@ -822,7 +822,7 @@ def main():
         if args.stdin:
             if args.input not in tar_formats:
                 print(
-                    f"Error: With --stdin, input must be a tar format: {', '.join(tar_formats)}",
+                    f'Error: With --stdin, input must be a tar format: {", ".join(tar_formats)}',
                     file=sys.stderr,
                 )
                 sys.exit(1)
@@ -833,7 +833,7 @@ def main():
         if args.stdout:
             if args.output not in tar_formats:
                 print(
-                    f"Error: With --stdout, output must be a tar format: {', '.join(tar_formats)}",
+                    f'Error: With --stdout, output must be a tar format: {", ".join(tar_formats)}',
                     file=sys.stderr,
                 )
                 sys.exit(1)
