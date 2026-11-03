@@ -99,6 +99,7 @@ test = [
     "pytest-cov",
     "hypothesis",
     "numpy",
+    "Pillow",
 ]
 lint = [
     "ruff",
